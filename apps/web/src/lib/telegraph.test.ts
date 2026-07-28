@@ -104,18 +104,20 @@ describe("telegraph", () => {
   });
 
   describe("buildIndexHtml", () => {
-    it("builds intro, digest links, and optional older-digests footer", () => {
+    it("builds intro, digest links, and optional older-digests footer without repeating the page title", () => {
       const html = buildIndexHtml(
         [
-          { title: "Daily Digest — 2026-07-28", url: "https://telegra.ph/Daily-Digest-07-28" },
-          { title: "Daily Digest — 2026-07-27", url: "https://telegra.ph/Daily-Digest-07-27" },
+          { title: "2026-07-28 14:06 UTC · Amazon Leo", url: "https://telegra.ph/Daily-Digest-07-28" },
+          { title: "2026-07-27 09:00 UTC · Open RAN", url: "https://telegra.ph/Daily-Digest-07-27" },
         ],
         "https://telegra.ph/Daily-News-Digest-Index-2",
       );
 
-      assert.match(html, /<h3>Daily News Digest<\/h3>/);
-      assert.match(html, /Daily Digest — 2026-07-28/);
-      assert.match(html, /Daily Digest — 2026-07-27/);
+      assert.doesNotMatch(html, /<h3>n\. digests<\/h3>/);
+      assert.doesNotMatch(html, /<h3>Daily News Digest<\/h3>/);
+      assert.match(html, /Newest first/);
+      assert.match(html, /Amazon Leo/);
+      assert.match(html, /Open RAN/);
       assert.match(html, /Older digests →/);
       assert.match(html, /Daily-News-Digest-Index-2/);
     });

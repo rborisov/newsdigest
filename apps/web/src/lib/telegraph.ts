@@ -1,9 +1,10 @@
 import { PrismaClient, TriggerType } from "@prisma/client";
 
+import { formatIndexLinkLabel } from "./digest-display";
 import { prisma as defaultPrisma } from "./db";
 
 export const INDEX_SOFT_LIMIT_BYTES = 55_000;
-export const INDEX_PAGE_TITLE = "Daily News Digest";
+export const INDEX_PAGE_TITLE = "n. digests";
 export const OLDER_DIGESTS_LABEL = "Older digests →";
 export const TELEGRAPH_API_BASE = "https://api.telegra.ph";
 
@@ -268,9 +269,9 @@ export function buildIndexHtml(
   digestLinks: IndexDigestLink[],
   previousIndexUrl?: string,
 ): string {
+  // Do not repeat INDEX_PAGE_TITLE here — Telegra.ph already shows createPage title as H1.
   const parts = [
-    `<h3>${INDEX_PAGE_TITLE}</h3>`,
-    "<p><em>Latest news digests</em></p>",
+    "<p><em>Newest first. Each link opens a full digest.</em></p>",
     "<hr/>",
   ];
 
@@ -478,6 +479,8 @@ async function updateIndexAfterPublishUnlocked(
       title: string;
       telegraphUrl: string;
       telegraphPath: string;
+      createdAt: Date;
+      storyTitles?: string[];
     };
   } & TelegraphDeps,
 ): Promise<{ indexUrl: string; indexPath: string; action: IndexUpdateAction }> {
@@ -497,21 +500,43 @@ async function updateIndexAfterPublishUnlocked(
           previousIndex: true,
           publishedPages: {
             orderBy: { createdAt: "desc" },
-            select: { id: true, title: true, telegraphUrl: true },
+            select: {
+              id: true,
+              title: true,
+              telegraphUrl: true,
+              createdAt: true,
+              stories: {
+                take: 4,
+                orderBy: { firstSeenAt: "asc" },
+                select: { title: true },
+              },
+            },
           },
         },
       })
     : null;
 
-  const newDigestLink: IndexDigestLink = {
-    title: params.publishedPage.title,
-    url: params.publishedPage.telegraphUrl,
-  };
+  const toIndexLink = (page: {
+    title: string;
+    telegraphUrl: string;
+    createdAt: Date;
+    stories?: { title: string }[];
+    storyTitles?: string[];
+  }): IndexDigestLink => ({
+    title: formatIndexLinkLabel({
+      title: page.title,
+      createdAt: page.createdAt,
+      storyTitles: page.storyTitles ?? page.stories?.map((story) => story.title) ?? [],
+    }),
+    url: page.telegraphUrl,
+  });
+
+  const newDigestLink = toIndexLink(params.publishedPage);
 
   const existingLinks: IndexDigestLink[] =
     currentIndex?.publishedPages
       .filter((page) => page.id !== params.publishedPage.id)
-      .map((page) => ({ title: page.title, url: page.telegraphUrl })) ?? [];
+      .map((page) => toIndexLink(page)) ?? [];
 
   const digestLinksForCandidate = [newDigestLink, ...existingLinks];
   const previousIndexUrl = currentIndex?.previousIndex?.telegraphUrl;
@@ -640,6 +665,8 @@ export async function updateIndexAfterPublish(
       title: string;
       telegraphUrl: string;
       telegraphPath: string;
+      createdAt: Date;
+      storyTitles?: string[];
     };
   } & TelegraphDeps,
 ): Promise<{ indexUrl: string; indexPath: string; action: IndexUpdateAction }> {
@@ -658,6 +685,13 @@ export async function linkDigestToIndex(
   const db = deps.prisma ?? defaultPrisma;
   const publishedPage = await db.publishedPage.findUnique({
     where: { id: publishedPageId },
+    include: {
+      stories: {
+        take: 4,
+        orderBy: { firstSeenAt: "asc" },
+        select: { title: true },
+      },
+    },
   });
 
   if (!publishedPage) {
@@ -684,6 +718,8 @@ export async function linkDigestToIndex(
       title: publishedPage.title,
       telegraphUrl: publishedPage.telegraphUrl,
       telegraphPath: publishedPage.telegraphPath,
+      createdAt: publishedPage.createdAt,
+      storyTitles: publishedPage.stories.map((story) => story.title),
     },
     prisma: db,
     fetchFn: deps.fetchFn,
@@ -753,6 +789,8 @@ export async function publishDigest(
       title: publishedPage.title,
       telegraphUrl: publishedPage.telegraphUrl,
       telegraphPath: publishedPage.telegraphPath,
+      createdAt: publishedPage.createdAt,
+      storyTitles: input.stories.map((story) => story.title),
     },
     prisma: db,
     fetchFn,

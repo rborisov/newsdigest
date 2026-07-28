@@ -6,6 +6,7 @@ import {
   formatDigestClock,
   formatDigestHeading,
   formatDigestWhen,
+  formatIndexLinkLabel,
 } from "./digest-display";
 
 describe("digest-display", () => {
@@ -37,5 +38,24 @@ describe("digest-display", () => {
     );
     assert.equal(tags.length, 2);
     assert.match(tags[0] ?? "", /Amazon/);
+  });
+
+  it("builds index link labels with time and story tags", () => {
+    const when = new Date("2026-07-28T13:45:00.000Z");
+    assert.equal(
+      formatIndexLinkLabel({
+        title: "Daily Digest — 2026-07-28",
+        createdAt: when,
+        storyTitles: ["Amazon Leo filing", "Open RAN trial"],
+      }),
+      "2026-07-28 13:45 UTC · Amazon Leo filing · Open RAN trial",
+    );
+    assert.equal(
+      formatIndexLinkLabel({
+        title: "Digest · 2026-07-28 13:45 UTC · Private 5G · NTN",
+        createdAt: when,
+      }),
+      "Digest · 2026-07-28 13:45 UTC · Private 5G · NTN",
+    );
   });
 });

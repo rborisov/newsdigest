@@ -35,6 +35,26 @@ export function formatDigestHeading(title: string): string | null {
   return trimmed;
 }
 
+/** Label for a digest entry on the Telegra.ph index page. */
+export function formatIndexLinkLabel(input: {
+  title: string;
+  createdAt: Date;
+  storyTitles?: string[];
+}): string {
+  const heading = formatDigestHeading(input.title);
+  if (heading) {
+    return heading.length > 120 ? `${heading.slice(0, 117).trimEnd()}…` : heading;
+  }
+
+  const when = input.createdAt.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  const tags = digestContentTags(input.storyTitles ?? [], 3);
+  if (tags.length > 0) {
+    const label = `${when} · ${tags.join(" · ")}`;
+    return label.length > 140 ? `${label.slice(0, 137).trimEnd()}…` : label;
+  }
+  return when;
+}
+
 /** Short chips from story titles (content tags). */
 export function digestContentTags(storyTitles: string[], limit = 4): string[] {
   const tags: string[] = [];

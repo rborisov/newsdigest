@@ -24,7 +24,7 @@ As root:
 curl -fsSL https://raw.githubusercontent.com/rborisov/newsdigest/main/install.sh | bash
 ```
 
-Installs Node 22, nginx, certbot, Cursor CLI; shallow-clones into a **temp build dir**, builds, then stages a **slim runtime** under `/opt/newsdigest` (standalone web + compiled worker/MCP — no full git tree). Runs **systemd** units `newsdigest-web` and `newsdigest-worker`. Agent workspace is `/opt/newsdigest/workspace`.
+Installs Node 22, nginx, certbot, Cursor CLI; builds in `/var/tmp/newsdigest-build` (cached across updates), then stages a **slim runtime** under `/opt/newsdigest` (standalone web + compiled worker/MCP — no full git tree served). Runs **systemd** units `newsdigest-web` and `newsdigest-worker`. Agent workspace is `/opt/newsdigest/workspace`.
 
 Re-run the same command to update (optional reconfigure, default no).
 

@@ -161,10 +161,18 @@ install_packages() {
 
 # Shallow clone into a disposable build tree (not the runtime root).
 ensure_build_tree() {
-  log "Fetching source into ${BUILD_ROOT} (shallow; discarded after install)"
-  rm -rf "${BUILD_ROOT}"
   mkdir -p "$(dirname "${BUILD_ROOT}")"
-  git clone --depth 1 --branch main "${REPO_URL}" "${BUILD_ROOT}"
+  if [[ -d "${BUILD_ROOT}/.git" ]]; then
+    log "Updating build cache at ${BUILD_ROOT} (keeps node_modules)"
+    git -C "${BUILD_ROOT}" remote set-url origin "${REPO_URL}"
+    git -C "${BUILD_ROOT}" fetch --depth 1 origin main
+    # Hard reset tracked files only — leaves node_modules / .next cache intact
+    git -C "${BUILD_ROOT}" reset --hard FETCH_HEAD
+  else
+    log "Cloning build cache into ${BUILD_ROOT} (kept across updates)"
+    rm -rf "${BUILD_ROOT}"
+    git clone --depth 1 --branch main "${REPO_URL}" "${BUILD_ROOT}"
+  fi
 }
 
 # Keep only what systemd / MCP / Cursor need under INSTALL_ROOT.
@@ -240,6 +248,23 @@ EOF
 
 install_runtime_node_deps() {
   log "Installing production deps for worker + MCP only"
+  local hash_file="${INSTALL_ROOT}/.install-runtime-deps-hash"
+  local pkgs_hash
+  pkgs_hash="$(
+    {
+      sha256sum "${INSTALL_ROOT}/apps/worker/package.json"
+      sha256sum "${INSTALL_ROOT}/apps/mcp-server/package.json"
+    } | sha256sum | awk '{print $1}'
+  )"
+
+  if [[ -d "${INSTALL_ROOT}/apps/worker/node_modules" ]] \
+    && [[ -d "${INSTALL_ROOT}/apps/mcp-server/node_modules" ]] \
+    && [[ -f "${hash_file}" ]] \
+    && [[ "$(cat "${hash_file}" 2>/dev/null || true)" == "${pkgs_hash}" ]]; then
+    log "Runtime package.json unchanged — skipping prod npm install"
+    return 0
+  fi
+
   (
     cd "${INSTALL_ROOT}/apps/worker"
     npm install --omit=dev --no-audit --no-fund
@@ -249,6 +274,7 @@ install_runtime_node_deps() {
     cd "${INSTALL_ROOT}/apps/mcp-server"
     npm install --omit=dev --no-audit --no-fund
   )
+  printf '%s\n' "${pkgs_hash}" > "${hash_file}"
 }
 
 load_env_defaults() {
@@ -562,19 +588,50 @@ install_app() {
   # Point Prisma at the runtime DB while building/seeding
   export DATABASE_URL="file:${DATA_DIR}/digest.db"
 
-  log "Installing npm dependencies (build tree)…"
-  npm ci --no-audit --no-fund
+  local lock_hash="" lock_file="${BUILD_ROOT}/.install-npm-hash"
+  local build_rev_file="${BUILD_ROOT}/.install-build-rev"
+  local head_rev
+  head_rev="$(git -C "${BUILD_ROOT}" rev-parse HEAD)"
+
+  if [[ -f package-lock.json ]]; then
+    lock_hash="$(sha256sum package-lock.json | awk '{print $1}')"
+  fi
+
+  if [[ ! -d node_modules ]] \
+    || [[ -z "${lock_hash}" ]] \
+    || [[ ! -f "${lock_file}" ]] \
+    || [[ "$(cat "${lock_file}" 2>/dev/null || true)" != "${lock_hash}" ]]; then
+    log "Installing npm dependencies (build tree; package-lock changed or node_modules missing)…"
+    npm ci --no-audit --no-fund
+    printf '%s\n' "${lock_hash}" > "${lock_file}"
+  else
+    log "package-lock unchanged — skipping npm ci"
+  fi
 
   log "Generating Prisma client…"
   npx prisma generate --schema=apps/web/prisma/schema.prisma
 
-  log "Building Next.js standalone…"
-  npm run build --workspace=web
-  prepare_standalone
+  local need_build=0
+  if [[ ! -f apps/web/.next/standalone/apps/web/server.js ]] \
+    || [[ ! -d apps/worker/dist ]] \
+    || [[ ! -d apps/mcp-server/dist ]] \
+    || [[ ! -f "${build_rev_file}" ]] \
+    || [[ "$(cat "${build_rev_file}" 2>/dev/null || true)" != "${head_rev}" ]]; then
+    need_build=1
+  fi
 
-  log "Compiling worker + MCP…"
-  npm run build --workspace=worker
-  npm run build --workspace=mcp-server
+  if [[ "${need_build}" -eq 1 ]]; then
+    log "Building Next.js standalone (rev ${head_rev})…"
+    npm run build --workspace=web
+    prepare_standalone
+
+    log "Compiling worker + MCP…"
+    npm run build --workspace=worker
+    npm run build --workspace=mcp-server
+    printf '%s\n' "${head_rev}" > "${build_rev_file}"
+  else
+    log "Already built at ${head_rev} — skipping compile"
+  fi
 
   log "Applying database schema + seed…"
   npm run db:push --workspace=web
@@ -583,11 +640,8 @@ install_app() {
   stage_runtime_from_build
   install_runtime_node_deps
 
-  log "Removing build tree ${BUILD_ROOT}"
-  rm -rf "${BUILD_ROOT}"
-
-  log "Runtime install ready at ${INSTALL_ROOT}"
-  du -sh "${INSTALL_ROOT}" "${DATA_DIR}" 2>/dev/null || true
+  log "Build cache kept at ${BUILD_ROOT} (runtime stays slim under ${INSTALL_ROOT})"
+  du -sh "${INSTALL_ROOT}" "${DATA_DIR}" "${BUILD_ROOT}" 2>/dev/null || true
 }
 
 start_services() {
@@ -747,8 +801,8 @@ main() {
   fi
 
   finish_marker
-  log "Install finished (mode=${mode}, slim runtime — no full git tree under ${INSTALL_ROOT})."
-  log "Build cache discarded from ${BUILD_ROOT}."
+  log "Install finished (mode=${mode}, slim runtime under ${INSTALL_ROOT})."
+  log "Build cache: ${BUILD_ROOT} (reused on updates; not served)."
 }
 
 main "$@"

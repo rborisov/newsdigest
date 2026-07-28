@@ -1,0 +1,11 @@
+node_modules/
+.next/
+dist/
+.env
+*.db
+*.db-journal
+.DS_Store
+.superpowers/
+apps/web/prisma/*.db
+apps/web/prisma/*.db-journal
+data/

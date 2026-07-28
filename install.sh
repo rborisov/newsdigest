@@ -228,6 +228,9 @@ EOF
     "${INSTALL_ROOT}/.git" \
     "${INSTALL_ROOT}/docs" \
     "${INSTALL_ROOT}/node_modules" \
+    "${INSTALL_ROOT}/apps/node_modules" \
+    "${INSTALL_ROOT}/apps/package.json" \
+    "${INSTALL_ROOT}/apps/package-lock.json" \
     "${INSTALL_ROOT}/apps/web/src" \
     "${INSTALL_ROOT}/apps/web/node_modules" \
     "${INSTALL_ROOT}/apps/web/.next/cache" \

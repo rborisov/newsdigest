@@ -440,15 +440,16 @@ main() {
   write_compose_override
   compose_up
 
-  if [[ "${RECONFIGURE}" -eq 1 ]] || [[ ! -f "${NGINX_SITE}" ]]; then
-    configure_nginx
-  fi
-
+  # Rewrite nginx / run certbot only when site missing or domain changed.
+  # Secret-only reconfigure (same domain) must not clobber Let's Encrypt SSL.
   local prev_domain=""
   if [[ -f "${INSTALL_DOMAIN_FILE}" ]]; then
-    prev_domain="$(tr -d '[:space:]' < "${INSTALL_DOMAIN_FILE}")"
+    prev_domain="$(tr -d '[:space:]' < "${INSTALL_DOMAIN_FILE}" || true)"
   fi
-  # Certbot only on first install or domain change (not on every reconfigure).
+
+  if [[ ! -f "${NGINX_SITE}" ]] || [[ -z "${prev_domain}" ]] || [[ "${prev_domain}" != "${DOMAIN}" ]]; then
+    configure_nginx
+  fi
   if [[ -z "${prev_domain}" ]] || [[ "${prev_domain}" != "${DOMAIN}" ]]; then
     obtain_certificate
     printf '%s\n' "${DOMAIN}" > "${INSTALL_DOMAIN_FILE}"

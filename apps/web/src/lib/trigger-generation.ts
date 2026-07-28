@@ -20,6 +20,23 @@ export async function triggerGeneration(
 ): Promise<TriggerGenerationResult> {
   await reconcileStaleRunningJobs(defaultPrisma);
 
+  const active = await defaultPrisma.generationJob.findFirst({
+    where: {
+      status: { in: [GenerationJobStatus.pending, GenerationJobStatus.running] },
+    },
+    select: { id: true, status: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (active) {
+    return {
+      ok: false,
+      error: `Generation already in progress (job ${active.id}, ${active.status}). Wait for it to finish.`,
+      status: 409,
+      jobId: active.id,
+    };
+  }
+
   const job = await defaultPrisma.generationJob.create({
     data: {
       status: GenerationJobStatus.pending,

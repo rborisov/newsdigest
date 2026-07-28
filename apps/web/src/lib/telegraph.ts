@@ -187,18 +187,19 @@ function createElement(tag: string, attrString: string): TelegraphNodeElement | 
 
 /** Bare root text (e.g. from stripped headings) becomes paragraphs so Telegra.ph keeps line breaks. */
 export function wrapOrphanTextNodes(nodes: TelegraphNode[]): TelegraphNode[] {
-  return nodes
-    .map((node) => {
-      if (typeof node !== "string") {
-        return node;
-      }
-      const text = node.trim();
-      if (!text) {
-        return null;
-      }
-      return { tag: "p", children: [text] } satisfies TelegraphNodeElement;
-    })
-    .filter((node): node is TelegraphNode => node != null);
+  const result: TelegraphNode[] = [];
+  for (const node of nodes) {
+    if (typeof node !== "string") {
+      result.push(node);
+      continue;
+    }
+    const text = node.trim();
+    if (!text) {
+      continue;
+    }
+    result.push({ tag: "p", children: [text] });
+  }
+  return result;
 }
 
 export function htmlToTelegraphNodes(html: string): TelegraphNode[] {

@@ -17,7 +17,7 @@ const sans = IBM_Plex_Sans({
 
 export const metadata: Metadata = {
   title: "n. — news digest",
-  description: "Curated telecom & mobile digests published to Telegra.ph",
+  description: "Topic digests researched by an agent and published to Telegra.ph",
   icons: {
     icon: "/logo.png",
     apple: "/logo.png",

@@ -61,10 +61,10 @@ export default async function HomePage() {
       />
 
       <section className="hero">
-        <h1>Signal, distilled.</h1>
+        <h1>News digest</h1>
         <p>
-          Short digests on mobile networking, embedded, and Android — researched
-          automatically, published to Telegra.ph.
+          Scheduled and on-demand digests from your topics — researched by an agent and
+          published to Telegra.ph.
         </p>
       </section>
 

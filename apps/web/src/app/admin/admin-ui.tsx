@@ -596,9 +596,26 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
   const [name, setName] = useState("");
   const [keywords, setKeywords] = useState("");
   const [sortOrder, setSortOrder] = useState("0");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editKeywords, setEditKeywords] = useState("");
+  const [editSortOrder, setEditSortOrder] = useState("0");
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
+
+  function startEdit(topic: TopicRow) {
+    setEditingId(topic.id);
+    setEditName(topic.name);
+    setEditKeywords(topic.keywords);
+    setEditSortOrder(String(topic.sortOrder));
+    setMessage(undefined);
+    setError(undefined);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
 
   async function handleAdd(event: React.FormEvent) {
     event.preventDefault();
@@ -625,6 +642,32 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
     setKeywords("");
     setSortOrder("0");
     setMessage("Topic added.");
+    router.refresh();
+  }
+
+  async function saveEdit(topicId: string) {
+    setPending(true);
+    setMessage(undefined);
+    setError(undefined);
+
+    const result = await adminFetch("/api/admin/topics", {
+      method: "PATCH",
+      body: JSON.stringify({
+        id: topicId,
+        name: editName,
+        keywords: editKeywords,
+        sortOrder: Number(editSortOrder),
+      }),
+    });
+
+    setPending(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    setEditingId(null);
+    setMessage("Topic updated.");
     router.refresh();
   }
 
@@ -663,6 +706,9 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
       return;
     }
 
+    if (editingId === topic.id) {
+      setEditingId(null);
+    }
     setMessage("Topic deleted.");
     router.refresh();
   }
@@ -710,22 +756,78 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
               <td colSpan={5} style={cellStyle}>No topics yet.</td>
             </tr>
           ) : (
-            initialTopics.map((topic) => (
-              <tr key={topic.id}>
-                <td style={cellStyle}>{topic.name}</td>
-                <td style={cellStyle}>{topic.keywords || "—"}</td>
-                <td style={cellStyle}>{topic.sortOrder}</td>
-                <td style={cellStyle}>{topic.enabled ? "Yes" : "No"}</td>
-                <td style={cellStyle}>
-                  <button type="button" style={buttonStyle} onClick={() => toggleEnabled(topic)}>
-                    {topic.enabled ? "Disable" : "Enable"}
-                  </button>{" "}
-                  <button type="button" style={buttonStyle} onClick={() => removeTopic(topic)}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))
+            initialTopics.map((topic) => {
+              const isEditing = editingId === topic.id;
+              return (
+                <tr key={topic.id}>
+                  <td style={cellStyle}>
+                    {isEditing ? (
+                      <input
+                        required
+                        value={editName}
+                        onChange={(event) => setEditName(event.target.value)}
+                        style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+                      />
+                    ) : (
+                      topic.name
+                    )}
+                  </td>
+                  <td style={cellStyle}>
+                    {isEditing ? (
+                      <input
+                        value={editKeywords}
+                        onChange={(event) => setEditKeywords(event.target.value)}
+                        style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+                      />
+                    ) : (
+                      topic.keywords || "—"
+                    )}
+                  </td>
+                  <td style={cellStyle}>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={editSortOrder}
+                        onChange={(event) => setEditSortOrder(event.target.value)}
+                        style={{ ...inputStyle, maxWidth: "5rem" }}
+                      />
+                    ) : (
+                      topic.sortOrder
+                    )}
+                  </td>
+                  <td style={cellStyle}>{topic.enabled ? "Yes" : "No"}</td>
+                  <td style={cellStyle}>
+                    {isEditing ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={pending || !editName.trim()}
+                          style={buttonStyle}
+                          onClick={() => void saveEdit(topic.id)}
+                        >
+                          Save
+                        </button>{" "}
+                        <button type="button" disabled={pending} style={buttonStyle} onClick={cancelEdit}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" style={buttonStyle} onClick={() => startEdit(topic)}>
+                          Edit
+                        </button>{" "}
+                        <button type="button" style={buttonStyle} onClick={() => toggleEnabled(topic)}>
+                          {topic.enabled ? "Disable" : "Enable"}
+                        </button>{" "}
+                        <button type="button" style={buttonStyle} onClick={() => removeTopic(topic)}>
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

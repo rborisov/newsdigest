@@ -29,6 +29,8 @@ RUN npm run build --workspace=web
 # MCP server + deps baked into the web image (no host/bind-mount node_modules, no bookworm pull).
 FROM node:22-alpine AS mcp
 WORKDIR /app/mcp-server
+# Wait for web `deps` npm ci to finish so BuildKit does not run two npm installs at once.
+COPY --from=deps /app/package.json /tmp/.wait-web-deps
 COPY apps/mcp-server/package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY apps/mcp-server/src ./src
@@ -43,7 +45,6 @@ ENV PORT=3000
 
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs \
-  && npm install -g prisma@6.19.0 tsx@4.20.6 \
   && mkdir -p /app/data \
   && chown nextjs:nodejs /app/data
 
@@ -54,7 +55,9 @@ COPY --from=builder /app/apps/web/prisma ./apps/web/prisma
 COPY --from=mcp /app/mcp-server /app/mcp-server
 COPY apps/web/docker-entrypoint.sh /app/docker-entrypoint.sh
 
-RUN chmod +x /app/docker-entrypoint.sh \
+# Install CLI tools only after COPY so this stage waits on builder+mcp (avoids parallel npm with deps).
+RUN npm install -g prisma@6.19.0 tsx@4.20.6 --no-audit --no-fund \
+  && chmod +x /app/docker-entrypoint.sh \
   && chown -R nextjs:nodejs /app
 
 USER nextjs

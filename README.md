@@ -4,13 +4,25 @@ Monorepo for the News Digest portal (Option A: Cursor CLI + stdio MCP on VPS →
 
 ## VPS install (Ubuntu)
 
+### Requirements
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| RAM | **2 GB** | 2–4 GB (1 GB usually fails / “hangs” during `npm` / Next build) |
+| CPU | 1 vCPU | 2 vCPU |
+| Disk | 10 GB free | 15+ GB |
+| OS | Ubuntu 22.04 or 24.04 | same |
+| Network | Ports 80/443 open; DNS A record → VPS | — |
+
+First image build can take **10–20+ minutes** on a 2 GB box. Long pauses on `npm ci` with no new lines are normal if only **one** npm is running. If several `npm` lines advance together, the VPS is overloaded.
+
 As root:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rborisov/newsdigest/main/install.sh | bash
 ```
 
-Installs Docker, nginx, Let's Encrypt, Cursor CLI (host), clones to `/opt/newsdigest`, and starts Compose.
+Installs Docker, nginx, Let's Encrypt, Cursor CLI (host), clones to `/opt/newsdigest`, and starts Compose (builds **web then worker**, one at a time).
 Re-run the same command (or `/opt/newsdigest/install.sh`) to update; you will be asked whether to reconfigure secrets (default no).
 
 ## Structure

@@ -364,9 +364,13 @@ compose_up() {
   log "Building and starting Docker Compose stack"
   cd "${INSTALL_ROOT}" || die "Cannot cd to ${INSTALL_ROOT}"
   # Never remove digest-data or other volumes.
-  # Small VPS: build one image at a time — parallel npm ci often looks "hung" and OOMs.
-  log "Building images sequentially (COMPOSE_PARALLEL_LIMIT=1)…"
-  COMPOSE_PARALLEL_LIMIT=1 docker compose build
+  # Small VPS: BuildKit + compose bake otherwise run web/worker/mcp npm in parallel and thrash RAM.
+  export BUILDKIT_MAX_PARALLELISM=1
+  export COMPOSE_PARALLEL_LIMIT=1
+  log "Building web image (sequential; npm/next can take several minutes on 1–2 GB VPS)…"
+  docker compose build web
+  log "Building worker image…"
+  docker compose build worker
   docker compose up -d
 }
 

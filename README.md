@@ -34,6 +34,27 @@ npm run dev:worker   # Worker stub (scheduler in Task 9)
 npm run build        # Build web app
 ```
 
+## MCP server (Cursor CLI)
+
+The `apps/mcp-server` package exposes a stdio MCP tool `publish_digest_page` that POSTs to the portal internal publish API. Configure it in `~/.cursor/mcp.json` (use absolute paths on your machine):
+
+```json
+{
+  "mcpServers": {
+    "news-digest": {
+      "command": "npx",
+      "args": ["tsx", "/absolute/path/to/newsdigest/apps/mcp-server/src/index.ts"],
+      "env": {
+        "PORTAL_URL": "http://localhost:3000",
+        "INTERNAL_API_KEY": "change-me"
+      }
+    }
+  }
+}
+```
+
+`INTERNAL_API_KEY` must match the value in the repo root `.env`. See `apps/mcp-server/.env.example` for variable names.
+
 ## Docker
 
 ```bash
@@ -48,4 +69,4 @@ Services:
 
 ## Status
 
-Task 1 scaffold only. Auth, Prisma, admin UI, MCP, and Telegra.ph integration follow in later tasks.
+Portal, internal publish/generate APIs, and MCP stdio server are implemented. Scheduler worker and Docker polish follow in later tasks.

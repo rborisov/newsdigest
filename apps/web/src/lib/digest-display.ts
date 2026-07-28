@@ -19,11 +19,18 @@ export function formatDigestClock(date: Date): string {
   });
 }
 
-/** Prefer a short label when Telegra.ph titles are near-duplicates. */
-export function formatDigestHeading(title: string, createdAt: Date): string {
+/**
+ * Distinct Telegra.ph title for the list, or null when it would only repeat the
+ * date/time already shown in the meta line.
+ */
+export function formatDigestHeading(title: string): string | null {
   const trimmed = title.trim();
   if (!trimmed || GENERIC_TITLE.test(trimmed)) {
-    return `Digest · ${formatDigestClock(createdAt)}`;
+    return null;
+  }
+  // Legacy portal fallback: "Digest · HH:MM" with no topics
+  if (/^digest · \d{1,2}:\d{2}/i.test(trimmed) && !/utc/i.test(trimmed)) {
+    return null;
   }
   return trimmed;
 }

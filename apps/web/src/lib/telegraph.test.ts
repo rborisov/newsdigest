@@ -73,6 +73,20 @@ describe("telegraph", () => {
         { tag: "hr" },
       ]);
     });
+
+    it("maps h2 to h3 so topic headings are not stripped", () => {
+      const nodes = htmlToTelegraphNodes(
+        "<h2>3GPP NTN</h2><p><strong>Story</strong> — summary. <a href=\"https://a.test\">Source</a></p>",
+      );
+      assert.deepEqual(nodes[0], { tag: "h3", children: ["3GPP NTN"] });
+      assert.equal((nodes[1] as { tag: string }).tag, "p");
+    });
+
+    it("supports ul/li lists", () => {
+      const nodes = htmlToTelegraphNodes("<h3>Open RAN</h3><ul><li>Item one</li><li>Item two</li></ul>");
+      assert.deepEqual(nodes[0], { tag: "h3", children: ["Open RAN"] });
+      assert.equal((nodes[1] as { tag: string }).tag, "ul");
+    });
   });
 
   describe("estimateSize", () => {

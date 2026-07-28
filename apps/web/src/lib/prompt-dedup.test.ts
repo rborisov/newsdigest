@@ -158,6 +158,8 @@ describe("prompt", () => {
       assert.match(prompt, /save_topic_draft/);
       assert.match(prompt, /Topic name \(pass exactly to save_topic_draft\): Open RAN/);
       assert.match(prompt, /Do NOT call publish_digest_page/);
+      assert.match(prompt, /<h3>Open RAN<\/h3>/);
+      assert.match(prompt, /Do NOT use <h1> or <h2>/);
     });
   });
 
@@ -187,6 +189,8 @@ describe("prompt", () => {
       assert.match(body, /## Topic: LEO/);
       assert.match(body, /EXCLUDE_STORIES/);
       assert.match(body, /Starlink/);
+      assert.match(body, /<h3>Topic Name<\/h3>/);
+      assert.match(body, /Put <hr\/> between topics/);
     });
   });
 });

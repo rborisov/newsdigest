@@ -100,12 +100,27 @@ const ALLOWED_TAGS = new Set([
   "p",
   "a",
   "blockquote",
+  "br",
   "hr",
   "strong",
   "em",
+  "ul",
+  "ol",
+  "li",
 ]);
-const VOID_TAGS = new Set(["hr"]);
+const VOID_TAGS = new Set(["hr", "br"]);
+const TAG_ALIASES: Record<string, string> = {
+  h1: "h3",
+  h2: "h3",
+  b: "strong",
+  i: "em",
+};
 const TAG_PATTERN = /<\/?([a-z][a-z0-9]*)\b([^>]*)\/?>/gi;
+
+function mapHtmlTag(tag: string): string {
+  const lower = tag.toLowerCase();
+  return TAG_ALIASES[lower] ?? lower;
+}
 
 function decodeHtmlEntities(text: string): string {
   return text
@@ -155,18 +170,35 @@ function appendNode(stack: TelegraphNodeElement[], node: TelegraphNodeElement): 
 }
 
 function createElement(tag: string, attrString: string): TelegraphNodeElement | null {
-  if (!ALLOWED_TAGS.has(tag)) {
+  const mapped = mapHtmlTag(tag);
+  if (!ALLOWED_TAGS.has(mapped)) {
     return null;
   }
 
-  const node: TelegraphNodeElement = { tag };
-  if (tag === "a") {
+  const node: TelegraphNodeElement = { tag: mapped };
+  if (mapped === "a") {
     const href = parseAnchorHref(attrString);
     if (href) {
       node.attrs = { href };
     }
   }
   return node;
+}
+
+/** Bare root text (e.g. from stripped headings) becomes paragraphs so Telegra.ph keeps line breaks. */
+export function wrapOrphanTextNodes(nodes: TelegraphNode[]): TelegraphNode[] {
+  return nodes
+    .map((node) => {
+      if (typeof node !== "string") {
+        return node;
+      }
+      const text = node.trim();
+      if (!text) {
+        return null;
+      }
+      return { tag: "p", children: [text] } satisfies TelegraphNodeElement;
+    })
+    .filter((node): node is TelegraphNode => node != null);
 }
 
 export function htmlToTelegraphNodes(html: string): TelegraphNode[] {
@@ -188,16 +220,19 @@ export function htmlToTelegraphNodes(html: string): TelegraphNode[] {
     }
 
     const fullTag = match[0];
-    const tag = match[1].toLowerCase();
+    const tag = mapHtmlTag(match[1]);
     const attrString = match[2];
     const isClosingTag = fullTag.startsWith("</");
     const isSelfClosing = fullTag.endsWith("/>") || VOID_TAGS.has(tag);
 
     if (isClosingTag) {
-      while (stack.length > 1) {
-        const current = stack.pop();
-        if (current?.tag === tag) {
-          break;
+      const hasMatch = stack.some((frame) => frame.tag === tag);
+      if (hasMatch) {
+        while (stack.length > 1) {
+          const current = stack.pop();
+          if (current?.tag === tag) {
+            break;
+          }
         }
       }
     } else if (VOID_TAGS.has(tag) || isSelfClosing) {
@@ -221,7 +256,7 @@ export function htmlToTelegraphNodes(html: string): TelegraphNode[] {
     appendText(stack, decodeHtmlEntities(trailingText));
   }
 
-  return root.children ?? [];
+  return wrapOrphanTextNodes(root.children ?? []);
 }
 
 export function estimateSize(nodes: TelegraphNode[]): number {

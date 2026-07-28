@@ -64,9 +64,9 @@ export function formatIndexLinkLabel(input: {
   storyTitles?: string[];
 }): string {
   const when = input.createdAt.toISOString().replace("T", " ").slice(0, 16) + " UTC";
-  const topics = topicsFromDigestTitle(input.title);
   const storyTags = digestContentTags(input.storyTitles ?? [], 3);
-  const bits = topics.length > 0 ? topics : storyTags;
+  const topics = topicsFromDigestTitle(input.title);
+  const bits = storyTags.length > 0 ? storyTags : topics;
   if (bits.length > 0) {
     const label = `${when} · ${bits.join(" · ")}`;
     return label.length > 140 ? `${label.slice(0, 137).trimEnd()}…` : label;
@@ -93,18 +93,21 @@ function isUsefulTag(tag: string): boolean {
   return true;
 }
 
-/** Merge topic + story chips for the portal list (deduped). */
+/** Content-first chips for the portal list (topics only as fallback). */
 export function digestListTags(input: {
   title: string;
   storyTitles: string[];
   limit?: number;
 }): string[] {
   const limit = input.limit ?? 5;
+  const fromStories = digestContentTags(input.storyTitles, limit);
+  if (fromStories.length > 0) {
+    return fromStories;
+  }
+
   const tags: string[] = [];
   const seen = new Set<string>();
-
-  // Prefer topic names from the digest title; story titles are often "Source".
-  for (const tag of [...topicsFromDigestTitle(input.title), ...digestContentTags(input.storyTitles, limit * 2)]) {
+  for (const tag of topicsFromDigestTitle(input.title)) {
     if (!isUsefulTag(tag)) {
       continue;
     }

@@ -55,9 +55,18 @@ describe("digest-display", () => {
       storyTitles: ["Source", "Amazon Leo filing"],
       limit: 5,
     });
-    assert.deepEqual(tags.slice(0, 2), ["Opportunities", "Выставки"]);
+    assert.equal(tags[0], "Amazon Leo filing");
     assert.equal(tags.includes("Source"), false);
-    assert.match(tags.join(" "), /Amazon/);
+    assert.equal(tags.includes("Opportunities"), false);
+  });
+
+  it("falls back to topics when stories are only noise", () => {
+    const tags = digestListTags({
+      title: "Digest · 2026-07-28 15:32 UTC · Opportunities · Выставки",
+      storyTitles: ["Source", "Read more"],
+      limit: 5,
+    });
+    assert.deepEqual(tags, ["Opportunities", "Выставки"]);
   });
 
   it("drops noise story labels like Source", () => {

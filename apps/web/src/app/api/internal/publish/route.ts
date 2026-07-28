@@ -2,6 +2,7 @@ import { GenerationJobStatus, TriggerType } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import {
+  enrichStoriesFromHtml,
   normalizeStoryFingerprints,
   parseStoriesFromHtml,
   type StoryFingerprint,
@@ -140,10 +141,12 @@ export async function POST(request: Request) {
     }
   }
 
-  const stories =
+  const stories = enrichStoriesFromHtml(
     body.stories && body.stories.length > 0
       ? normalizeStoryFingerprints(body.stories)
-      : parseStoriesFromHtml(html);
+      : parseStoriesFromHtml(html),
+    html,
+  );
 
   const knownStories = await prisma.publishedStory.findMany({
     select: {

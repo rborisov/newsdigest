@@ -68,6 +68,15 @@ describe("dedup", () => {
       assert.equal(stories[0]?.canonicalUrl, "https://news.test/a");
       assert.equal(stories[0]?.titleKey, "alpha");
     });
+
+    it("uses strong headline when link text is Source", () => {
+      const stories = parseStoriesFromHtml(
+        '<p><strong>Amazon Leo filing</strong> — summary. <a href="https://satnews.test/a">Source</a></p>',
+      );
+      assert.equal(stories.length, 1);
+      assert.equal(stories[0]?.title, "Amazon Leo filing");
+      assert.equal(stories[0]?.canonicalUrl, "https://satnews.test/a");
+    });
   });
 
   describe("areAllStoriesKnown", () => {

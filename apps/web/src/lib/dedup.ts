@@ -75,7 +75,8 @@ export function formatExcludeStories(stories: StoryFingerprint[]): string {
 export function parseStoriesFromHtml(html: string): StoryFingerprint[] {
   const stories: StoryFingerprint[] = [];
   const seen = new Set<string>();
-  const anchorPattern = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
+  const anchorPattern =
+    /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
 
   for (const match of html.matchAll(anchorPattern)) {
     const href = (match[1] ?? match[2] ?? match[3] ?? "").trim();
@@ -89,7 +90,11 @@ export function parseStoriesFromHtml(html: string): StoryFingerprint[] {
     }
 
     const canonicalUrl = normalizeCanonicalUrl(href);
-    const title = innerText || canonicalUrl;
+    const fromLink = innerText || canonicalUrl;
+    const fromContext =
+      match.index != null ? headlineNearAnchor(html, match.index) : null;
+    const title =
+      isNoiseStoryTitle(fromLink) && fromContext ? fromContext : fromLink;
     const dedupeKey = canonicalUrl || normalizeTitleKey(title);
     if (seen.has(dedupeKey)) {
       continue;
@@ -104,6 +109,70 @@ export function parseStoriesFromHtml(html: string): StoryFingerprint[] {
   }
 
   return stories;
+}
+
+const NOISE_STORY_TITLE =
+  /^(source|sources|link|read more|more|here|click|url|http|https|www)$/i;
+
+export function isNoiseStoryTitle(title: string): boolean {
+  const trimmed = title.trim();
+  if (trimmed.length < 3) {
+    return true;
+  }
+  return NOISE_STORY_TITLE.test(trimmed);
+}
+
+/** Prefer <strong>headline</strong> in the same paragraph as a weak "Source" link. */
+export function headlineNearAnchor(html: string, anchorIndex: number): string | null {
+  const before = html.slice(Math.max(0, anchorIndex - 800), anchorIndex);
+  const pOpen = Math.max(before.lastIndexOf("<p"), before.lastIndexOf("<p "));
+  const chunk = pOpen >= 0 ? before.slice(pOpen) : before;
+
+  const strongMatches = [...chunk.matchAll(/<strong\b[^>]*>([\s\S]*?)<\/strong>/gi)];
+  const strong = strongMatches.at(-1)?.[1];
+  if (strong) {
+    const text = strong.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    if (text && !isNoiseStoryTitle(text)) {
+      return text;
+    }
+  }
+
+  const textOnly = chunk.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const beforeDash = textOnly.split(/\s+[—–-]\s+/)[0]?.trim() ?? "";
+  if (beforeDash.length >= 12 && !isNoiseStoryTitle(beforeDash)) {
+    return beforeDash.length > 120 ? `${beforeDash.slice(0, 117).trimEnd()}…` : beforeDash;
+  }
+
+  return null;
+}
+
+/** If agent/stories array used "Source" as title, recover headlines from HTML. */
+export function enrichStoriesFromHtml(
+  stories: StoryFingerprint[],
+  html: string,
+): StoryFingerprint[] {
+  const fromHtml = parseStoriesFromHtml(html);
+  if (stories.length === 0) {
+    return fromHtml;
+  }
+
+  return stories.map((story) => {
+    if (!isNoiseStoryTitle(story.title)) {
+      return story;
+    }
+    const url = story.canonicalUrl ? normalizeCanonicalUrl(story.canonicalUrl) : null;
+    const match = url
+      ? fromHtml.find((row) => row.canonicalUrl === url)
+      : fromHtml.find((row) => !isNoiseStoryTitle(row.title));
+    if (!match || isNoiseStoryTitle(match.title)) {
+      return story;
+    }
+    return {
+      ...story,
+      title: match.title,
+      titleKey: normalizeTitleKey(match.title),
+    };
+  });
 }
 
 export function isStoryKnown(story: StoryFingerprint, known: KnownStory[]): boolean {

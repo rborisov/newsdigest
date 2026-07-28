@@ -1,13 +1,8 @@
-import { signOut } from "@/lib/auth";
+import { signOutAction } from "@/app/sign-out-action";
 
 export function SignOutButton({ className = "nav-link" }: { className?: string }) {
   return (
-    <form
-      action={async () => {
-        "use server";
-        await signOut({ redirectTo: "/" });
-      }}
-    >
+    <form action={signOutAction}>
       <button type="submit" className={className}>
         Sign out
       </button>

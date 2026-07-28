@@ -297,6 +297,7 @@ install_cursor_cli() {
     log "Cursor CLI updated"
   fi
   /usr/local/bin/agent --version || die "agent --version failed"
+  log "Verify agent works inside web on first VPS soak (docker compose exec web agent --version); Alpine/glibc ABI is unconfirmed."
 }
 
 write_mcp_json() {
@@ -343,6 +344,17 @@ services:
       - /opt/newsdigest/mcp.json:/home/nextjs/.cursor/mcp.json:ro
       - ./apps/mcp-server:/opt/newsdigest/apps/mcp-server:ro
 EOF
+}
+
+install_mcp_deps() {
+  # Bind-mounted apps/mcp-server is gitignored for node_modules; install inside a
+  # throwaway Node image so the host does not need Node. mcp-server has no workspace deps.
+  log "Installing MCP server dependencies"
+  docker run --rm \
+    -v "${INSTALL_ROOT}/apps/mcp-server:/app" \
+    -w /app \
+    node:22-bookworm \
+    bash -lc 'if [[ -f package-lock.json ]]; then npm ci --omit=dev; else npm install --omit=dev; fi'
 }
 
 compose_up() {
@@ -438,19 +450,28 @@ main() {
   install_cursor_cli
   write_mcp_json
   write_compose_override
+  install_mcp_deps
   compose_up
 
-  # Rewrite nginx / run certbot only when site missing or domain changed.
-  # Secret-only reconfigure (same domain) must not clobber Let's Encrypt SSL.
+  # Rewrite nginx / run certbot when site missing or domain changed.
+  # Secret-only reconfigure (same domain, site present) must not clobber Let's Encrypt SSL.
+  # Missing site alone still needs certbot even if .install-domain already matches DOMAIN.
   local prev_domain=""
   if [[ -f "${INSTALL_DOMAIN_FILE}" ]]; then
     prev_domain="$(tr -d '[:space:]' < "${INSTALL_DOMAIN_FILE}" || true)"
   fi
 
-  if [[ ! -f "${NGINX_SITE}" ]] || [[ -z "${prev_domain}" ]] || [[ "${prev_domain}" != "${DOMAIN}" ]]; then
+  local site_missing=0
+  [[ -f "${NGINX_SITE}" ]] || site_missing=1
+  local domain_changed=0
+  if [[ -z "${prev_domain}" ]] || [[ "${prev_domain}" != "${DOMAIN}" ]]; then
+    domain_changed=1
+  fi
+
+  if [[ "${site_missing}" -eq 1 ]] || [[ "${domain_changed}" -eq 1 ]]; then
     configure_nginx
   fi
-  if [[ -z "${prev_domain}" ]] || [[ "${prev_domain}" != "${DOMAIN}" ]]; then
+  if [[ "${site_missing}" -eq 1 ]] || [[ "${domain_changed}" -eq 1 ]]; then
     obtain_certificate
     printf '%s\n' "${DOMAIN}" > "${INSTALL_DOMAIN_FILE}"
   fi

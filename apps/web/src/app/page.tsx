@@ -42,14 +42,9 @@ export default async function HomePage() {
           isSignedIn ? (
             <>
               {isAdmin ? (
-                <>
-                  <Link href="/admin#jobs" className="nav-link">
-                    Generate
-                  </Link>
-                  <Link href="/admin" className="nav-link">
-                    Admin
-                  </Link>
-                </>
+                <Link href="/admin" className="nav-link">
+                  Admin
+                </Link>
               ) : null}
               <SignOutButton />
             </>

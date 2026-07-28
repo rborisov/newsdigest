@@ -203,6 +203,18 @@ stage_runtime_from_build() {
   # Prisma schema for generate / future db ops
   cp -f "${BUILD_ROOT}/apps/web/prisma/schema.prisma" "${INSTALL_ROOT}/apps/web/prisma/schema.prisma"
   cp -f "${BUILD_ROOT}/apps/web/prisma/seed.ts" "${INSTALL_ROOT}/apps/web/prisma/seed.ts"
+  # Copy under worker too so `prisma generate` project-root = worker (has package.json)
+  mkdir -p "${INSTALL_ROOT}/apps/worker/prisma"
+  cp -f "${BUILD_ROOT}/apps/web/prisma/schema.prisma" "${INSTALL_ROOT}/apps/worker/prisma/schema.prisma"
+
+  # Minimal root manifest so tooling does not invent /opt/newsdigest/apps as a package root
+  cat > "${INSTALL_ROOT}/package.json" <<'EOF'
+{
+  "name": "newsdigest",
+  "private": true,
+  "description": "Slim VPS runtime — not a full monorepo checkout"
+}
+EOF
 
   # Tiny marker README in agent workspace (no app source)
   cat > "${WORKSPACE_DIR}/README.md" <<'EOF'
@@ -219,7 +231,6 @@ EOF
     "${INSTALL_ROOT}/apps/web/src" \
     "${INSTALL_ROOT}/apps/web/node_modules" \
     "${INSTALL_ROOT}/apps/web/.next/cache" \
-    "${INSTALL_ROOT}/package.json" \
     "${INSTALL_ROOT}/package-lock.json" \
     "${INSTALL_ROOT}/docker-compose.yml" \
     "${INSTALL_ROOT}/docker-compose.override.yml" \
@@ -267,12 +278,13 @@ install_runtime_node_deps() {
 
   (
     cd "${INSTALL_ROOT}/apps/worker"
-    npm install --omit=dev --no-audit --no-fund
-    npx prisma generate --schema=../web/prisma/schema.prisma
+    # Ignore postinstall (it points at ../web schema and confuses Prisma project root)
+    npm install --omit=dev --ignore-scripts --no-audit --no-fund
+    npx prisma generate --schema=prisma/schema.prisma
   )
   (
     cd "${INSTALL_ROOT}/apps/mcp-server"
-    npm install --omit=dev --no-audit --no-fund
+    npm install --omit=dev --ignore-scripts --no-audit --no-fund
   )
   printf '%s\n' "${pkgs_hash}" > "${hash_file}"
 }

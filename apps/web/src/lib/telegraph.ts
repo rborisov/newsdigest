@@ -354,7 +354,48 @@ async function loadAuthorFields(db: PrismaClient): Promise<{ authorName: string;
   };
 }
 
-export async function updateIndexAfterPublish(
+/** How long an acquired index lock is held before another writer may steal it. */
+export const INDEX_LOCK_TTL_MS = 60_000;
+
+export const INDEX_LOCK_BUSY_ERROR =
+  "Index update already in progress; retry shortly.";
+
+/**
+ * SQLite-friendly mutex on TelegraphMeta.indexLockUntil so concurrent publishes
+ * cannot race while rewriting the shared index page.
+ */
+export async function withIndexUpdateLock<T>(
+  db: PrismaClient,
+  fn: () => Promise<T>,
+  options?: { ttlMs?: number; now?: Date },
+): Promise<T> {
+  const ttlMs = options?.ttlMs ?? INDEX_LOCK_TTL_MS;
+  const now = options?.now ?? new Date();
+  const lockUntil = new Date(now.getTime() + ttlMs);
+
+  const acquired = await db.telegraphMeta.updateMany({
+    where: {
+      id: "default",
+      OR: [{ indexLockUntil: null }, { indexLockUntil: { lt: now } }],
+    },
+    data: { indexLockUntil: lockUntil },
+  });
+
+  if (acquired.count !== 1) {
+    throw new Error(INDEX_LOCK_BUSY_ERROR);
+  }
+
+  try {
+    return await fn();
+  } finally {
+    await db.telegraphMeta.update({
+      where: { id: "default" },
+      data: { indexLockUntil: null },
+    });
+  }
+}
+
+async function updateIndexAfterPublishUnlocked(
   params: {
     publishedPage: {
       id: string;
@@ -514,6 +555,63 @@ export async function updateIndexAfterPublish(
   ]);
 
   return { indexUrl: created.url, indexPath: created.path, action: "rotate" };
+}
+
+export async function updateIndexAfterPublish(
+  params: {
+    publishedPage: {
+      id: string;
+      title: string;
+      telegraphUrl: string;
+      telegraphPath: string;
+    };
+  } & TelegraphDeps,
+): Promise<{ indexUrl: string; indexPath: string; action: IndexUpdateAction }> {
+  const db = params.prisma ?? defaultPrisma;
+  return withIndexUpdateLock(db, () => updateIndexAfterPublishUnlocked(params));
+}
+
+/**
+ * Resume index linking for a digest that was created but never attached to the
+ * index (partial publish). Does not create another Telegra.ph digest page.
+ */
+export async function linkDigestToIndex(
+  publishedPageId: string,
+  deps: TelegraphDeps = {},
+): Promise<{ indexUrl: string; indexPath: string; action: IndexUpdateAction }> {
+  const db = deps.prisma ?? defaultPrisma;
+  const publishedPage = await db.publishedPage.findUnique({
+    where: { id: publishedPageId },
+  });
+
+  if (!publishedPage) {
+    throw new Error("Published page not found");
+  }
+
+  if (publishedPage.indexPageId) {
+    const indexPage = await db.telegraphIndexPage.findUnique({
+      where: { id: publishedPage.indexPageId },
+    });
+    if (!indexPage) {
+      throw new Error("Index page linked to published digest is missing");
+    }
+    return {
+      indexUrl: indexPage.telegraphUrl,
+      indexPath: indexPage.telegraphPath,
+      action: "edit",
+    };
+  }
+
+  return updateIndexAfterPublish({
+    publishedPage: {
+      id: publishedPage.id,
+      title: publishedPage.title,
+      telegraphUrl: publishedPage.telegraphUrl,
+      telegraphPath: publishedPage.telegraphPath,
+    },
+    prisma: db,
+    fetchFn: deps.fetchFn,
+  });
 }
 
 export async function publishDigest(

@@ -50,13 +50,15 @@ model PromptConfig {
 }
 
 model TelegraphMeta {
-  id               String @id @default("default")
-  accessToken      String @default("")
-  currentIndexPath String @default("")
-  currentIndexUrl  String @default("")
-  authorName       String @default("")
-  authorUrl        String @default("")
-  updatedAt        DateTime @updatedAt
+  id               String    @id @default("default")
+  accessToken      String    @default("")
+  currentIndexPath String    @default("")
+  currentIndexUrl  String    @default("")
+  authorName       String    @default("")
+  authorUrl        String    @default("")
+  /// Exclusive lock expiry for serializing index updates (null = unlocked).
+  indexLockUntil   DateTime?
+  updatedAt        DateTime  @updatedAt
 }
 
 model TelegraphIndexPage {

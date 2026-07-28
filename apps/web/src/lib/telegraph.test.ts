@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  INDEX_LOCK_BUSY_ERROR,
   INDEX_SOFT_LIMIT_BYTES,
   buildIndexHtml,
   decideIndexUpdateAction,
   estimateSize,
   htmlToTelegraphNodes,
+  withIndexUpdateLock,
 } from "./telegraph";
 
 describe("telegraph", () => {
@@ -113,6 +115,49 @@ describe("telegraph", () => {
 
       assert.equal(decideIndexUpdateAction(true, html), "rotate");
       assert.ok(estimateSize(htmlToTelegraphNodes(html)) > INDEX_SOFT_LIMIT_BYTES);
+    });
+  });
+
+  describe("withIndexUpdateLock", () => {
+    it("acquires when unlocked and releases afterward", async () => {
+      const calls: string[] = [];
+      const mockDb = {
+        telegraphMeta: {
+          updateMany: async () => {
+            calls.push("acquire");
+            return { count: 1 };
+          },
+          update: async () => {
+            calls.push("release");
+            return {};
+          },
+        },
+      };
+
+      const result = await withIndexUpdateLock(mockDb as never, async () => {
+        calls.push("work");
+        return "ok";
+      });
+
+      assert.equal(result, "ok");
+      assert.deepEqual(calls, ["acquire", "work", "release"]);
+    });
+
+    it("throws when the lock is held by another writer", async () => {
+      const mockDb = {
+        telegraphMeta: {
+          updateMany: async () => ({ count: 0 }),
+          update: async () => {
+            throw new Error("should not release when acquire failed");
+          },
+        },
+      };
+
+      await assert.rejects(
+        () => withIndexUpdateLock(mockDb as never, async () => "nope"),
+        (error: unknown) =>
+          error instanceof Error && error.message === INDEX_LOCK_BUSY_ERROR,
+      );
     });
   });
 });

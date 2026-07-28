@@ -31,9 +31,10 @@ async function main() {
   const emails = parseAllowedEmails(process.env.ALLOWED_EMAILS);
 
   for (const email of emails) {
+    // ALLOWED_EMAILS bootstraps missing rows only; create still sets isAdmin: true.
     await prisma.allowedUser.upsert({
       where: { email },
-      update: { isAdmin: true },
+      update: {},
       create: { email, isAdmin: true },
     });
   }

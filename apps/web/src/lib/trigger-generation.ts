@@ -2,6 +2,7 @@ import { GenerationJobStatus, TriggerType } from "@prisma/client";
 
 import { spawnAgent } from "./cursor";
 import { prisma as defaultPrisma } from "./db";
+import { reconcileStaleRunningJobs } from "./job-reconciliation";
 import { buildPrompt } from "./prompt";
 
 export type TriggerGenerationInput = {
@@ -17,6 +18,8 @@ export type TriggerGenerationResult =
 export async function triggerGeneration(
   input: TriggerGenerationInput,
 ): Promise<TriggerGenerationResult> {
+  await reconcileStaleRunningJobs(defaultPrisma);
+
   const job = await defaultPrisma.generationJob.create({
     data: {
       status: GenerationJobStatus.pending,

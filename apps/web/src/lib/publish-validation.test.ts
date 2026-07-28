@@ -5,6 +5,7 @@ import { GenerationJobStatus } from "@prisma/client";
 import {
   buildExistingPublishResponse,
   getPublishSoftFailReason,
+  needsIndexLinkResume,
   shouldReturnExistingPublish,
 } from "./publish-validation";
 
@@ -33,25 +34,52 @@ describe("publish-validation", () => {
   });
 
   describe("shouldReturnExistingPublish", () => {
-    it("returns true when job is completed", () => {
+    it("returns true only when job is completed and digest is index-linked", () => {
       assert.equal(
-        shouldReturnExistingPublish(GenerationJobStatus.completed, false),
+        shouldReturnExistingPublish(GenerationJobStatus.completed, {
+          indexPageId: "idx_1",
+        }),
         true,
       );
     });
 
-    it("returns true when a published page already exists", () => {
+    it("returns false when a published page exists but is not index-linked", () => {
       assert.equal(
-        shouldReturnExistingPublish(GenerationJobStatus.running, true),
-        true,
-      );
-    });
-
-    it("returns false for a fresh running job", () => {
-      assert.equal(
-        shouldReturnExistingPublish(GenerationJobStatus.running, false),
+        shouldReturnExistingPublish(GenerationJobStatus.failed, {
+          indexPageId: null,
+        }),
         false,
       );
+      assert.equal(
+        shouldReturnExistingPublish(GenerationJobStatus.running, {
+          indexPageId: null,
+        }),
+        false,
+      );
+      assert.equal(
+        shouldReturnExistingPublish(GenerationJobStatus.completed, {
+          indexPageId: null,
+        }),
+        false,
+      );
+    });
+
+    it("returns false for a fresh running job without a page", () => {
+      assert.equal(
+        shouldReturnExistingPublish(GenerationJobStatus.running, null),
+        false,
+      );
+    });
+  });
+
+  describe("needsIndexLinkResume", () => {
+    it("returns true when a page exists without indexPageId", () => {
+      assert.equal(needsIndexLinkResume({ indexPageId: null }), true);
+    });
+
+    it("returns false when already linked or missing", () => {
+      assert.equal(needsIndexLinkResume({ indexPageId: "idx_1" }), false);
+      assert.equal(needsIndexLinkResume(null), false);
     });
   });
 

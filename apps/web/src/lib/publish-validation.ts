@@ -25,11 +25,27 @@ export function getPublishSoftFailReason(
   return null;
 }
 
+/**
+ * Idempotent success only when the job fully finished AND the digest is
+ * linked on the index. A PublishedPage without indexPageId is a partial
+ * publish that must resume index linking — not short-circuit as success.
+ */
 export function shouldReturnExistingPublish(
   jobStatus: GenerationJobStatus,
-  hasPublishedPage: boolean,
+  publishedPage: { indexPageId: string | null } | null | undefined,
 ): boolean {
-  return jobStatus === GenerationJobStatus.completed || hasPublishedPage;
+  return (
+    jobStatus === GenerationJobStatus.completed &&
+    publishedPage != null &&
+    publishedPage.indexPageId != null
+  );
+}
+
+/** Digest page exists but was never linked onto the index (partial publish). */
+export function needsIndexLinkResume(
+  publishedPage: { indexPageId: string | null } | null | undefined,
+): boolean {
+  return publishedPage != null && publishedPage.indexPageId == null;
 }
 
 export type ExistingPublishPayload = {

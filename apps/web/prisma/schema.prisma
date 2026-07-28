@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum GenerationJobStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+enum TriggerType {
+  manual
+  scheduled
+  agent
+}
+
+model Topic {
+  id        String   @id @default(cuid())
+  name      String
+  keywords  String   @default("")
+  enabled   Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Schedule {
+  id        String   @id @default(cuid())
+  name      String
+  cronExpr  String
+  timezone  String   @default("UTC")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs GenerationJob[]
+}
+
+model PromptConfig {
+  id          String @id @default("default")
+  template    String
+  periodHours Int    @default(24)
+  updatedAt   DateTime @updatedAt
+}
+
+model TelegraphMeta {
+  id               String @id @default("default")
+  accessToken      String @default("")
+  currentIndexPath String @default("")
+  currentIndexUrl  String @default("")
+  authorName       String @default("")
+  authorUrl        String @default("")
+  updatedAt        DateTime @updatedAt
+}
+
+model TelegraphIndexPage {
+  id             String    @id @default(cuid())
+  telegraphPath  String
+  telegraphUrl   String
+  previousIndexId String?
+  isCurrent      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  closedAt       DateTime?
+
+  previousIndex TelegraphIndexPage?  @relation("IndexChain", fields: [previousIndexId], references: [id])
+  nextIndexes   TelegraphIndexPage[] @relation("IndexChain")
+  publishedPages PublishedPage[]
+}
+
+model GenerationJob {
+  id          String              @id @default(cuid())
+  status      GenerationJobStatus @default(pending)
+  triggerType TriggerType
+  error       String?
+  scheduleId  String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  schedule     Schedule?      @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  publishedPage PublishedPage?
+}
+
+model PublishedPage {
+  id            String      @id @default(cuid())
+  title         String
+  telegraphPath String
+  telegraphUrl  String
+  indexPageId   String?
+  triggerType   TriggerType
+  triggeredBy   String
+  jobId         String      @unique
+  createdAt     DateTime    @default(now())
+
+  indexPage TelegraphIndexPage? @relation(fields: [indexPageId], references: [id], onDelete: SetNull)
+  job       GenerationJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  stories   PublishedStory[]
+}
+
+model PublishedStory {
+  id              String   @id @default(cuid())
+  canonicalUrl    String?  @unique
+  title           String
+  titleKey        String?
+  firstSeenAt     DateTime @default(now())
+  publishedPageId String
+
+  publishedPage PublishedPage @relation(fields: [publishedPageId], references: [id], onDelete: Cascade)
+
+  @@index([titleKey])
+  @@index([firstSeenAt])
+}
+
+model AllowedUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  isAdmin   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Auth.js Prisma adapter models
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

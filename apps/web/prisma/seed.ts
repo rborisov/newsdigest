@@ -1,0 +1,77 @@
+import { config } from "dotenv";
+import { resolve } from "node:path";
+import { PrismaClient } from "@prisma/client";
+
+config({ path: resolve(__dirname, "../.env") });
+config({ path: resolve(__dirname, "../../../.env") });
+
+const prisma = new PrismaClient();
+
+const DEFAULT_PROMPT_TEMPLATE = `You are a news digest editor. Compile a concise digest of recent news for the topics below.
+
+Topics:
+{{TOPICS}}
+
+Lookback period: {{PERIOD_HOURS}} hours
+Date: {{DATE}}
+
+Do NOT include any story listed under EXCLUDE_STORIES (match by URL first, then by near-identical title).
+Prefer source URLs so future digests can deduplicate reliably.
+
+EXCLUDE_STORIES:
+{{EXCLUDE_STORIES}}
+
+When ready, publish the digest via the publish_digest_page MCP tool.
+Do not finish until publish_digest_page returns a URL.
+If publish fails, retry once then report the error.`;
+
+function parseAllowedEmails(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((email) => email.trim())
+    .filter(Boolean);
+}
+
+async function main() {
+  const emails = parseAllowedEmails(process.env.ALLOWED_EMAILS);
+
+  for (const email of emails) {
+    await prisma.allowedUser.upsert({
+      where: { email },
+      update: { isAdmin: true },
+      create: { email, isAdmin: true },
+    });
+  }
+
+  await prisma.promptConfig.upsert({
+    where: { id: "default" },
+    update: {},
+    create: {
+      id: "default",
+      template: DEFAULT_PROMPT_TEMPLATE,
+      periodHours: 24,
+    },
+  });
+
+  await prisma.telegraphMeta.upsert({
+    where: { id: "default" },
+    update: {},
+    create: {
+      id: "default",
+      accessToken: "",
+      currentIndexPath: "",
+      currentIndexUrl: "",
+      authorName: "",
+      authorUrl: "",
+    },
+  });
+}
+
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

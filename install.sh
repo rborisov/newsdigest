@@ -47,12 +47,13 @@ is_installed() {
 
 prompt() {
   # usage: prompt VAR "Question" ["default"]
+  # Read from TTY so curl|bash still works (stdin is the script pipe).
   local __var="$1" __q="$2" __d="${3:-}" __ans
   if [[ -n "${__d}" ]]; then
-    read -r -p "${__q} [${__d}]: " __ans || true
+    read -r -p "${__q} [${__d}]: " __ans </dev/tty || true
     __ans="${__ans:-${__d}}"
   else
-    read -r -p "${__q}: " __ans || true
+    read -r -p "${__q}: " __ans </dev/tty || true
   fi
   printf -v "${__var}" '%s' "${__ans}"
 }
@@ -60,11 +61,11 @@ prompt() {
 prompt_secret() {
   local __var="$1" __q="$2" __d="${3:-}" __ans
   if [[ -n "${__d}" ]]; then
-    read -r -s -p "${__q} [keep existing if blank]: " __ans || true
+    read -r -s -p "${__q} [keep existing if blank]: " __ans </dev/tty || true
     echo
     __ans="${__ans:-${__d}}"
   else
-    read -r -s -p "${__q}: " __ans || true
+    read -r -s -p "${__q}: " __ans </dev/tty || true
     echo
   fi
   printf -v "${__var}" '%s' "${__ans}"
@@ -119,6 +120,10 @@ install_packages() {
     log "Docker Engine + Compose plugin already available"
   else
     log "Installing Docker Engine + Compose plugin (official apt repo)"
+    # Remove distro/conflicting packages so docker-ce can install cleanly.
+    DEBIAN_FRONTEND=noninteractive apt-get remove -y \
+      docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc \
+      >/dev/null 2>&1 || true
     setup_docker_apt_repo
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
       docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin

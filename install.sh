@@ -304,7 +304,22 @@ EOF
 }
 
 install_cursor_cli() {
-  log "Installing/updating Cursor CLI"
+  # On updates: keep existing agent; only install if missing.
+  if [[ -x /usr/local/bin/agent ]] || [[ -x /root/.local/bin/agent ]]; then
+    local agent_src=""
+    if [[ -x /usr/local/bin/agent ]]; then
+      agent_src=/usr/local/bin/agent
+    else
+      agent_src=/root/.local/bin/agent
+      ln -sfn "${agent_src}" /usr/local/bin/agent
+    fi
+    if /usr/local/bin/agent --version >/dev/null 2>&1; then
+      log "Cursor CLI already present ($(/usr/local/bin/agent --version 2>/dev/null | head -1)); skipping download"
+      return 0
+    fi
+  fi
+
+  log "Installing Cursor CLI"
   curl -fsS https://cursor.com/install | bash
   local agent_src=""
   if [[ -x /root/.local/bin/agent ]]; then
@@ -315,9 +330,6 @@ install_cursor_cli() {
     die "Cursor CLI installed but 'agent' not found on PATH."
   fi
   ln -sfn "${agent_src}" /usr/local/bin/agent
-  if /usr/local/bin/agent update >/dev/null 2>&1; then
-    log "Cursor CLI updated"
-  fi
   /usr/local/bin/agent --version || die "agent --version failed"
 }
 
@@ -421,24 +433,58 @@ prepare_standalone() {
 }
 
 install_app() {
-  log "Installing npm dependencies (can take several minutes on 1 GB + swap)…"
+  local force_deps=0 force_build=0
+  # First install always does full deps + build.
+  if [[ ! -f "${MARKER}" ]]; then
+    force_deps=1
+    force_build=1
+  fi
+
+  log "Preparing application under ${INSTALL_ROOT}"
   cd "${INSTALL_ROOT}" || die "Cannot cd to ${INSTALL_ROOT}"
   mkdir -p "${DATA_DIR}"
 
-  # Limit Node heap during install/build on small VPS
   export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
 
-  npm ci --no-audit --no-fund
+  local lock_hash="" lock_file="${INSTALL_ROOT}/.install-npm-hash"
+  local build_rev_file="${INSTALL_ROOT}/.install-build-rev"
+  local head_rev
+  head_rev="$(git -C "${INSTALL_ROOT}" rev-parse HEAD)"
+
+  if [[ -f package-lock.json ]]; then
+    lock_hash="$(sha256sum package-lock.json | awk '{print $1}')"
+  fi
+
+  if [[ "${force_deps}" -eq 1 ]] \
+    || [[ ! -d node_modules ]] \
+    || [[ -z "${lock_hash}" ]] \
+    || [[ ! -f "${lock_file}" ]] \
+    || [[ "$(cat "${lock_file}" 2>/dev/null || true)" != "${lock_hash}" ]]; then
+    log "Installing npm dependencies (package-lock changed or node_modules missing)…"
+    npm ci --no-audit --no-fund
+    printf '%s\n' "${lock_hash}" > "${lock_file}"
+  else
+    log "package-lock unchanged — skipping npm ci"
+  fi
 
   log "Generating Prisma client…"
   npx prisma generate --schema=apps/web/prisma/schema.prisma
 
-  log "Building Next.js (slow on 1 GB — leave it running)…"
-  npm run build --workspace=web
-  prepare_standalone
+  if [[ "${force_build}" -eq 1 ]] \
+    || [[ ! -f apps/web/.next/standalone/apps/web/server.js ]] \
+    || [[ ! -f "${build_rev_file}" ]] \
+    || [[ "$(cat "${build_rev_file}" 2>/dev/null || true)" != "${head_rev}" ]]; then
+    log "Building Next.js (revision ${head_rev})…"
+    npm run build --workspace=web
+    prepare_standalone
+    printf '%s\n' "${head_rev}" > "${build_rev_file}"
+  else
+    log "Already built at ${head_rev} — skipping next build"
+  fi
 
-  log "Applying database schema + seed…"
+  log "Applying database schema…"
   npm run db:push --workspace=web
+  # Seed every run is cheap and keeps ALLOWED_EMAILS rows present (does not re-promote admins).
   npm run db:seed --workspace=web
 }
 

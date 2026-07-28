@@ -946,8 +946,17 @@ function KeysSection({
         </label>
         <label style={fieldStyle}>
           Author URL
-          <input value={authorUrl} onChange={(event) => setAuthorUrl(event.target.value)} style={inputStyle} />
+          <input
+            value={authorUrl}
+            onChange={(event) => setAuthorUrl(event.target.value)}
+            placeholder="https://t.me/yourchannel (or leave blank)"
+            style={inputStyle}
+          />
         </label>
+        <p style={messageStyle}>
+          Must be a full <code>https://…</code> URL or empty. Bare text / invalid links cause Telegra.ph{" "}
+          <code>AUTHOR_URL_INVALID</code> on publish.
+        </p>
         <button type="submit" disabled={pending} style={{ ...buttonStyle, alignSelf: "start" }}>
           Save Telegra.ph settings
         </button>

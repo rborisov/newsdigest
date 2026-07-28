@@ -7,6 +7,39 @@ export const INDEX_PAGE_TITLE = "Daily News Digest";
 export const OLDER_DIGESTS_LABEL = "Older digests →";
 export const TELEGRAPH_API_BASE = "https://api.telegra.ph";
 
+/**
+ * Telegra.ph requires author_url to be empty or a real http(s) URL.
+ * Admin often has bare domains / t.me paths / @handles — normalize or drop.
+ */
+export function sanitizeAuthorUrl(raw: string | null | undefined): string | undefined {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  let candidate = trimmed;
+  if (candidate.startsWith("@") && candidate.length > 1) {
+    candidate = `https://t.me/${candidate.slice(1)}`;
+  } else if (/^(t\.me|telegram\.me)\//i.test(candidate)) {
+    candidate = `https://${candidate}`;
+  } else if (!/^[a-z][a-z0-9+.-]*:/i.test(candidate)) {
+    candidate = `https://${candidate}`;
+  }
+
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return undefined;
+    }
+    if (!url.hostname) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export type TelegraphNodeElement = {
   tag: string;
   attrs?: Record<string, string>;
@@ -258,8 +291,9 @@ async function callTelegraphApi(
   if (params.authorName) {
     body.set("author_name", params.authorName);
   }
-  if (params.authorUrl) {
-    body.set("author_url", params.authorUrl);
+  const authorUrl = sanitizeAuthorUrl(params.authorUrl);
+  if (authorUrl) {
+    body.set("author_url", authorUrl);
   }
 
   const url =
@@ -279,7 +313,13 @@ async function callTelegraphApi(
 
   const payload = (await response.json()) as TelegraphApiResponse;
   if (!payload.ok || !payload.result) {
-    throw new Error(payload.error ?? "Telegra.ph request failed");
+    const apiError = payload.error ?? "Telegra.ph request failed";
+    if (apiError === "AUTHOR_URL_INVALID") {
+      throw new Error(
+        "AUTHOR_URL_INVALID: set Author URL in Admin to a full https:// link (e.g. https://t.me/yourchannel), or clear it.",
+      );
+    }
+    throw new Error(apiError);
   }
 
   return payload.result;

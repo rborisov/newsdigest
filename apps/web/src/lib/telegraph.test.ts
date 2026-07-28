@@ -8,10 +8,31 @@ import {
   decideIndexUpdateAction,
   estimateSize,
   htmlToTelegraphNodes,
+  sanitizeAuthorUrl,
   withIndexUpdateLock,
 } from "./telegraph";
 
 describe("telegraph", () => {
+  describe("sanitizeAuthorUrl", () => {
+    it("returns undefined for empty or invalid values", () => {
+      assert.equal(sanitizeAuthorUrl(""), undefined);
+      assert.equal(sanitizeAuthorUrl("   "), undefined);
+      assert.equal(sanitizeAuthorUrl("not a url !!!"), undefined);
+    });
+
+    it("keeps valid https URLs", () => {
+      assert.equal(sanitizeAuthorUrl("https://t.me/mychannel"), "https://t.me/mychannel");
+    });
+
+    it("normalizes @handles and bare t.me paths", () => {
+      assert.equal(sanitizeAuthorUrl("@mychannel"), "https://t.me/mychannel");
+      assert.equal(sanitizeAuthorUrl("t.me/mychannel"), "https://t.me/mychannel");
+    });
+
+    it("adds https to bare hostnames", () => {
+      assert.equal(sanitizeAuthorUrl("example.com/news"), "https://example.com/news");
+    });
+  });
   describe("htmlToTelegraphNodes", () => {
     it("converts headings, paragraphs, links, and inline tags", () => {
       const html =

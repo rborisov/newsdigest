@@ -8,7 +8,7 @@ COPY apps/worker/package.json ./apps/worker/
 COPY apps/mcp-server/package.json ./apps/mcp-server/
 COPY apps/web/prisma ./apps/web/prisma
 
-RUN npm ci --workspace=worker --include-workspace-root
+RUN npm ci --workspace=worker --include-workspace-root --no-audit --no-fund
 
 FROM node:22-alpine AS runner
 WORKDIR /app

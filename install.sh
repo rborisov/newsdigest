@@ -364,7 +364,10 @@ compose_up() {
   log "Building and starting Docker Compose stack"
   cd "${INSTALL_ROOT}" || die "Cannot cd to ${INSTALL_ROOT}"
   # Never remove digest-data or other volumes.
-  docker compose up -d --build
+  # Small VPS: build one image at a time — parallel npm ci often looks "hung" and OOMs.
+  log "Building images sequentially (COMPOSE_PARALLEL_LIMIT=1)…"
+  COMPOSE_PARALLEL_LIMIT=1 docker compose build
+  docker compose up -d
 }
 
 configure_nginx() {

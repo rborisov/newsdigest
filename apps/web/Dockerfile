@@ -7,7 +7,7 @@ COPY apps/web/package.json ./apps/web/
 COPY apps/worker/package.json ./apps/worker/
 COPY apps/mcp-server/package.json ./apps/mcp-server/
 
-RUN npm ci --workspace=web --include-workspace-root
+RUN npm ci --workspace=web --include-workspace-root --no-audit --no-fund
 
 FROM node:22-alpine AS builder
 WORKDIR /app
@@ -30,7 +30,7 @@ RUN npm run build --workspace=web
 FROM node:22-alpine AS mcp
 WORKDIR /app/mcp-server
 COPY apps/mcp-server/package.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev --no-audit --no-fund
 COPY apps/mcp-server/src ./src
 
 FROM node:22-alpine AS runner

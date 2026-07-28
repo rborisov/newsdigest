@@ -12,6 +12,12 @@ services:
     volumes:
       - digest-data:/app/data
     restart: unless-stopped
+    # Host CLI option (TN-0005 §5): mount Cursor CLI + repo MCP path, then set CURSOR_CLI_PATH.
+    # volumes:
+    #   - /usr/local/bin/agent:/usr/local/bin/agent:ro
+    #   - ./apps/mcp-server:/app/mcp-server:ro
+    # environment:
+    #   CURSOR_CLI_PATH: /usr/local/bin/agent
 
   worker:
     build:

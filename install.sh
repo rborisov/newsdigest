@@ -130,12 +130,25 @@ install_packages() {
       docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   fi
 
-  systemctl enable --now docker
+  ensure_docker_running
   systemctl enable --now nginx
+  systemctl is-active --quiet nginx || die "nginx.service failed to start. Check: journalctl -xeu nginx.service"
 
   need_cmd docker
   docker compose version >/dev/null 2>&1 || die "docker compose version failed"
   log "docker compose: $(docker compose version)"
+}
+
+# Official docker-ce uses socket activation. Starting docker.service alone after a
+# reinstall often fails with: "no sockets found via socket activation".
+ensure_docker_running() {
+  systemctl daemon-reload || true
+  systemctl reset-failed docker.service docker.socket 2>/dev/null || true
+  systemctl enable docker.socket docker.service >/dev/null 2>&1 || true
+  systemctl stop docker.service 2>/dev/null || true
+  systemctl start docker.socket || die "docker.socket failed to start. Check: journalctl -xeu docker.socket"
+  systemctl start docker.service || die "docker.service failed to start. Check: journalctl -xeu docker.service"
+  systemctl is-active --quiet docker || die "docker.service is not active after start."
 }
 
 ensure_repo() {

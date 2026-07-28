@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
+# VPS installer — host Node.js + systemd (no Docker). Suitable for 1 GB RAM with swap.
 set -euo pipefail
 
 INSTALL_ROOT=/opt/newsdigest
 REPO_URL=https://github.com/rborisov/newsdigest.git
 MARKER="${INSTALL_ROOT}/.installed"
-COMPOSE_OVERRIDE="${INSTALL_ROOT}/docker-compose.override.yml"
+DATA_DIR="${INSTALL_ROOT}/data"
 NGINX_SITE=/etc/nginx/sites-available/newsdigest
 MCP_JSON="${INSTALL_ROOT}/mcp.json"
+MCP_HOME_JSON=/root/.cursor/mcp.json
 INSTALL_DOMAIN_FILE="${INSTALL_ROOT}/.install-domain"
+WEB_UNIT=/etc/systemd/system/newsdigest-web.service
+WORKER_UNIT=/etc/systemd/system/newsdigest-worker.service
+SWAPFILE=/swapfile
+SWAP_SIZE_GB=2
 
 DOMAIN=""
 LE_EMAIL=""
@@ -43,12 +49,10 @@ require_ubuntu() {
 }
 
 is_installed() {
-  [[ -f "${MARKER}" && -f "${INSTALL_ROOT}/docker-compose.yml" ]]
+  [[ -f "${MARKER}" && -f "${INSTALL_ROOT}/package.json" && -f "${WEB_UNIT}" ]]
 }
 
 prompt() {
-  # usage: prompt VAR "Question" ["default"]
-  # Read from TTY so curl|bash still works (stdin is the script pipe).
   local __var="$1" __q="$2" __d="${3:-}" __ans
   if [[ -n "${__d}" ]]; then
     read -r -p "${__q} [${__d}]: " __ans </dev/tty || true
@@ -76,96 +80,105 @@ gen_secret() {
   openssl rand -hex 32
 }
 
-pkg_installed() {
-  dpkg -s "$1" >/dev/null 2>&1
-}
-
 ensure_apt_packages() {
-  local pkgs=("$@")
-  local missing=()
+  local pkgs=("$@") missing=()
   local p
   for p in "${pkgs[@]}"; do
-    if ! pkg_installed "${p}"; then
+    if ! dpkg -s "${p}" >/dev/null 2>&1; then
       missing+=("${p}")
     fi
   done
-  if [[ "${#missing[@]}" -eq 0 ]]; then
-    return 0
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    log "Installing apt packages: ${missing[*]}"
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}"
   fi
-  log "Installing apt packages: ${missing[*]}"
-  apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}"
 }
 
-setup_docker_apt_repo() {
-  # shellcheck source=/dev/null
-  . /etc/os-release
-  local arch
-  arch="$(dpkg --print-architecture)"
-  install -m 0755 -d /etc/apt/keyrings
-  if [[ ! -f /etc/apt/keyrings/docker.asc ]]; then
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-    chmod a+r /etc/apt/keyrings/docker.asc
+# 1 GB boxes need swap for `next build`; runtime fits in ~512–800 MB.
+ensure_swap() {
+  local mem_kb swap_kb
+  mem_kb="$(awk '/MemTotal:/ {print $2}' /proc/meminfo)"
+  swap_kb="$(awk '/SwapTotal:/ {print $2}' /proc/meminfo)"
+  if [[ "${mem_kb}" -ge 1800000 ]]; then
+    log "RAM ≥ ~1.8 GiB — swap not required for build"
+    return 0
   fi
-  cat > /etc/apt/sources.list.d/docker.list <<EOF
-deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable
-EOF
+  if [[ "${swap_kb}" -ge 1000000 ]]; then
+    log "Swap already present ($(awk '/SwapTotal:/ {printf "%.1f GiB", $2/1024/1024}' /proc/meminfo))"
+    return 0
+  fi
+  log "Low RAM (${mem_kb} kB) — creating ${SWAP_SIZE_GB}G swap at ${SWAPFILE}"
+  if [[ ! -f "${SWAPFILE}" ]]; then
+    fallocate -l "${SWAP_SIZE_GB}G" "${SWAPFILE}" 2>/dev/null \
+      || dd if=/dev/zero of="${SWAPFILE}" bs=1M count=$((SWAP_SIZE_GB * 1024)) status=none
+    chmod 600 "${SWAPFILE}"
+    mkswap "${SWAPFILE}" >/dev/null
+  fi
+  swapon "${SWAPFILE}" 2>/dev/null || true
+  if ! grep -q "${SWAPFILE}" /etc/fstab 2>/dev/null; then
+    echo "${SWAPFILE} none swap sw 0 0" >> /etc/fstab
+  fi
+  swapon --show || true
+}
+
+install_node22() {
+  if command -v node >/dev/null 2>&1; then
+    local major
+    major="$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0)"
+    if [[ "${major}" -ge 22 ]]; then
+      log "Node.js $(node -v) already installed"
+      return 0
+    fi
+    log "Node $(node -v) is too old; installing Node.js 22"
+  else
+    log "Installing Node.js 22"
+  fi
+  ensure_apt_packages ca-certificates curl gnupg
+  mkdir -p /etc/apt/keyrings
+  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+    | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
+    > /etc/apt/sources.list.d/nodesource.list
   apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
+  need_cmd node
+  need_cmd npm
+  log "Node.js $(node -v) / npm $(npm -v)"
 }
 
 install_packages() {
-  log "Ensuring system packages"
-  ensure_apt_packages ca-certificates curl git openssl nginx certbot python3-certbot-nginx
-
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    log "Docker Engine + Compose plugin already available"
-  else
-    log "Installing Docker Engine + Compose plugin (official apt repo)"
-    # Remove distro/conflicting packages so docker-ce can install cleanly.
-    DEBIAN_FRONTEND=noninteractive apt-get remove -y \
-      docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc \
-      >/dev/null 2>&1 || true
-    setup_docker_apt_repo
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-      docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-  fi
-
-  ensure_docker_running
+  log "Ensuring system packages (no Docker)"
+  ensure_apt_packages ca-certificates curl git openssl nginx certbot python3-certbot-nginx build-essential python3
+  ensure_swap
+  install_node22
   systemctl enable --now nginx
-  systemctl is-active --quiet nginx || die "nginx.service failed to start. Check: journalctl -xeu nginx.service"
-
-  need_cmd docker
-  docker compose version >/dev/null 2>&1 || die "docker compose version failed"
-  log "docker compose: $(docker compose version)"
-}
-
-# Official docker-ce uses socket activation. Starting docker.service alone after a
-# reinstall often fails with: "no sockets found via socket activation".
-ensure_docker_running() {
-  systemctl daemon-reload || true
-  systemctl reset-failed docker.service docker.socket 2>/dev/null || true
-  systemctl enable docker.socket docker.service >/dev/null 2>&1 || true
-  systemctl stop docker.service 2>/dev/null || true
-  systemctl start docker.socket || die "docker.socket failed to start. Check: journalctl -xeu docker.socket"
-  systemctl start docker.service || die "docker.service failed to start. Check: journalctl -xeu docker.service"
-  systemctl is-active --quiet docker || die "docker.service is not active after start."
+  systemctl is-active --quiet nginx || die "nginx.service failed to start"
 }
 
 ensure_repo() {
   if [[ ! -d "${INSTALL_ROOT}/.git" ]]; then
     mkdir -p "$(dirname "${INSTALL_ROOT}")"
     if [[ -d "${INSTALL_ROOT}" ]] && [[ -n "$(ls -A "${INSTALL_ROOT}" 2>/dev/null || true)" ]]; then
-      die "${INSTALL_ROOT} exists but is not a git checkout. Move it aside and re-run."
+      # Previous Docker install left a checkout — reuse if it is this repo.
+      if [[ -f "${INSTALL_ROOT}/package.json" ]]; then
+        log "${INSTALL_ROOT} exists; using existing tree (will git pull if .git present)"
+        if [[ ! -d "${INSTALL_ROOT}/.git" ]]; then
+          die "${INSTALL_ROOT} exists without .git. Move it aside and re-run."
+        fi
+      else
+        die "${INSTALL_ROOT} exists but is not a newsdigest checkout. Move it aside and re-run."
+      fi
+    else
+      log "Cloning ${REPO_URL} → ${INSTALL_ROOT}"
+      git clone "${REPO_URL}" "${INSTALL_ROOT}"
     fi
-    log "Cloning ${REPO_URL} → ${INSTALL_ROOT}"
-    git clone "${REPO_URL}" "${INSTALL_ROOT}"
   else
     log "Updating repo at ${INSTALL_ROOT} (git pull --ff-only)"
     git -C "${INSTALL_ROOT}" pull --ff-only
   fi
 }
 
-# Parse KEY=VAL lines from .env into installer defaults. Do not source the file.
 load_env_defaults() {
   local env_file="${INSTALL_ROOT}/.env"
   [[ -f "${env_file}" ]] || return 0
@@ -257,37 +270,35 @@ prompt_config() {
 write_env() {
   local env_file="${INSTALL_ROOT}/.env"
   log "Writing ${env_file}"
+  mkdir -p "${DATA_DIR}"
   cat > "${env_file}" <<EOF
-# managed-by: newsdigest-install
+# managed-by: newsdigest-install (host / systemd — no Docker)
 DOMAIN=${DOMAIN}
 LE_EMAIL=${LE_EMAIL}
 
-# Auth.js / NextAuth
 NEXTAUTH_URL=${NEXTAUTH_URL}
 NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
 
-# Google OAuth
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
 GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
 
-# Yandex OAuth
 YANDEX_CLIENT_ID=${YANDEX_CLIENT_ID}
 YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET}
 
-# Comma-separated allowlist; seeded as admins
 ALLOWED_EMAILS=${ALLOWED_EMAILS}
 
-# Internal API key (worker + MCP → portal)
 INTERNAL_API_KEY=${INTERNAL_API_KEY}
 
-# Cursor CLI
 CURSOR_API_KEY=${CURSOR_API_KEY}
+CURSOR_CLI_PATH=/usr/local/bin/agent
 
-# Telegra.ph (may also be stored in DB via admin)
 TELEGRAPH_ACCESS_TOKEN=${TELEGRAPH_ACCESS_TOKEN}
 
-# SQLite (Prisma) — Compose overrides for containers
-DATABASE_URL=file:./dev.db
+# Absolute SQLite path (host)
+DATABASE_URL=file:${DATA_DIR}/digest.db
+
+# Worker → portal
+PORTAL_URL=http://127.0.0.1:3000
 EOF
   chmod 600 "${env_file}"
 }
@@ -295,7 +306,6 @@ EOF
 install_cursor_cli() {
   log "Installing/updating Cursor CLI"
   curl -fsS https://cursor.com/install | bash
-  # Official installer puts agent under ~/.local/bin for the current user (root → /root/.local/bin)
   local agent_src=""
   if [[ -x /root/.local/bin/agent ]]; then
     agent_src=/root/.local/bin/agent
@@ -305,31 +315,31 @@ install_cursor_cli() {
     die "Cursor CLI installed but 'agent' not found on PATH."
   fi
   ln -sfn "${agent_src}" /usr/local/bin/agent
-  # Prefer update when available
   if /usr/local/bin/agent update >/dev/null 2>&1; then
     log "Cursor CLI updated"
   fi
   /usr/local/bin/agent --version || die "agent --version failed"
-  log "Verify agent works inside web on first VPS soak (docker compose exec web agent --version); Alpine/glibc ABI is unconfirmed."
 }
 
 write_mcp_json() {
-  log "Writing MCP config ${MCP_JSON}"
+  log "Writing MCP config ${MCP_JSON} and ${MCP_HOME_JSON}"
   if [[ -z "${INTERNAL_API_KEY}" ]]; then
     load_env_defaults
   fi
   [[ -n "${INTERNAL_API_KEY}" ]] || die "INTERNAL_API_KEY is required for MCP config."
 
-  local key_json
+  local key_json tsx_bin
   key_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${INTERNAL_API_KEY}")"
+  tsx_bin="${INSTALL_ROOT}/node_modules/.bin/tsx"
+  [[ -x "${tsx_bin}" ]] || tsx_bin="npx"
 
-  # MCP is baked into the web image at /app/mcp-server (see apps/web/Dockerfile).
+  mkdir -p /root/.cursor
   cat > "${MCP_JSON}" <<EOF
 {
   "mcpServers": {
     "news-digest": {
-      "command": "tsx",
-      "args": ["/app/mcp-server/src/index.ts"],
+      "command": "${tsx_bin}",
+      "args": ["${INSTALL_ROOT}/apps/mcp-server/src/index.ts"],
       "env": {
         "PORTAL_URL": "http://127.0.0.1:3000",
         "INTERNAL_API_KEY": ${key_json}
@@ -339,39 +349,93 @@ write_mcp_json() {
 }
 EOF
   chmod 0644 "${MCP_JSON}"
+  cp -f "${MCP_JSON}" "${MCP_HOME_JSON}"
+  chmod 0644 "${MCP_HOME_JSON}"
 }
 
-write_compose_override() {
-  log "Writing ${COMPOSE_OVERRIDE}"
-  # ${CURSOR_API_KEY} is left for Compose to interpolate from .env (quoted heredoc).
-  # MCP lives inside the web image — do not bind-mount apps/mcp-server.
-  cat > "${COMPOSE_OVERRIDE}" <<'EOF'
+write_systemd_units() {
+  log "Writing systemd units"
+  cat > "${WEB_UNIT}" <<EOF
 # managed-by: newsdigest-install
-services:
-  web:
-    environment:
-      CURSOR_CLI_PATH: /usr/local/bin/agent
-      HOME: /home/nextjs
-      CURSOR_API_KEY: ${CURSOR_API_KEY}
-    volumes:
-      - /usr/local/bin/agent:/usr/local/bin/agent:ro
-      - /root/.local/share/cursor-agent:/home/nextjs/.local/share/cursor-agent:ro
-      - /opt/newsdigest/mcp.json:/home/nextjs/.cursor/mcp.json:ro
+[Unit]
+Description=News Digest portal (Next.js)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${INSTALL_ROOT}
+EnvironmentFile=${INSTALL_ROOT}/.env
+Environment=NODE_ENV=production
+Environment=HOME=/root
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/npm run start --workspace=web
+Restart=on-failure
+RestartSec=5
+# Cap heap so 1 GB hosts leave room for OS + worker
+Environment=NODE_OPTIONS=--max-old-space-size=512
+
+[Install]
+WantedBy=multi-user.target
 EOF
+
+  cat > "${WORKER_UNIT}" <<EOF
+# managed-by: newsdigest-install
+[Unit]
+Description=News Digest scheduler worker
+After=network.target newsdigest-web.service
+Wants=newsdigest-web.service
+
+[Service]
+Type=simple
+WorkingDirectory=${INSTALL_ROOT}
+EnvironmentFile=${INSTALL_ROOT}/.env
+Environment=NODE_ENV=production
+Environment=HOME=/root
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/npm run start --workspace=worker
+Restart=on-failure
+RestartSec=5
+Environment=NODE_OPTIONS=--max-old-space-size=256
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
 }
 
-compose_up() {
-  log "Building and starting Docker Compose stack"
+install_app() {
+  log "Installing npm dependencies (can take several minutes on 1 GB + swap)…"
   cd "${INSTALL_ROOT}" || die "Cannot cd to ${INSTALL_ROOT}"
-  # Never remove digest-data or other volumes.
-  # Small VPS: BuildKit + compose bake otherwise run web/worker/mcp npm in parallel and thrash RAM.
-  export BUILDKIT_MAX_PARALLELISM=1
-  export COMPOSE_PARALLEL_LIMIT=1
-  log "Building web image (sequential; npm/next can take several minutes on 1–2 GB VPS)…"
-  docker compose build web
-  log "Building worker image…"
-  docker compose build worker
-  docker compose up -d
+  mkdir -p "${DATA_DIR}"
+
+  # Limit Node heap during install/build on small VPS
+  export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
+
+  npm ci --no-audit --no-fund
+
+  log "Generating Prisma client…"
+  npx prisma generate --schema=apps/web/prisma/schema.prisma
+
+  log "Building Next.js (slow on 1 GB — leave it running)…"
+  npm run build --workspace=web
+
+  log "Applying database schema + seed…"
+  npm run db:push --workspace=web
+  npm run db:seed --workspace=web
+}
+
+start_services() {
+  log "Starting systemd services"
+  systemctl enable newsdigest-web newsdigest-worker
+  systemctl restart newsdigest-web
+  # Give web a moment before worker hits it
+  sleep 3
+  systemctl restart newsdigest-worker
+  systemctl is-active --quiet newsdigest-web || die "newsdigest-web failed. Check: journalctl -u newsdigest-web -n 50 --no-pager"
+  systemctl is-active --quiet newsdigest-worker || die "newsdigest-worker failed. Check: journalctl -u newsdigest-worker -n 50 --no-pager"
+  log "Services active: newsdigest-web, newsdigest-worker"
 }
 
 configure_nginx() {
@@ -397,6 +461,8 @@ server {
 }
 EOF
   ln -sfn "${NGINX_SITE}" /etc/nginx/sites-enabled/newsdigest
+  # Disable default site if it steals :80
+  rm -f /etc/nginx/sites-enabled/default
   nginx -t || die "nginx -t failed"
   systemctl reload nginx
 }
@@ -412,7 +478,6 @@ obtain_certificate() {
 }
 
 resolve_domain_for_update() {
-  # On non-reconfigure update: prefer tracked domain, then .env / NEXTAUTH_URL.
   if [[ -f "${INSTALL_DOMAIN_FILE}" ]]; then
     DOMAIN="$(tr -d '[:space:]' < "${INSTALL_DOMAIN_FILE}")"
   fi
@@ -422,9 +487,20 @@ resolve_domain_for_update() {
   [[ -n "${DOMAIN}" ]] || die "DOMAIN unknown; re-run with reconfigure or set NEXTAUTH_URL in .env."
 }
 
+stop_docker_stack_if_present() {
+  # Migrating from earlier Docker-based installs
+  if [[ -f "${INSTALL_ROOT}/docker-compose.yml" ]] && command -v docker >/dev/null 2>&1; then
+    if docker compose -f "${INSTALL_ROOT}/docker-compose.yml" ps -q 2>/dev/null | grep -q .; then
+      log "Stopping previous Docker Compose stack (host install replaces it)…"
+      docker compose -f "${INSTALL_ROOT}/docker-compose.yml" down || true
+    fi
+  fi
+}
+
 finish_marker() {
   touch "${MARKER}"
   log "Done. Portal: https://${DOMAIN}"
+  log "Logs: journalctl -u newsdigest-web -f"
   log "Re-run this script anytime to update."
 }
 
@@ -436,7 +512,7 @@ main() {
   local mode=install
   if is_installed; then
     mode=update
-    log "Existing install detected at ${INSTALL_ROOT}"
+    log "Existing host install detected at ${INSTALL_ROOT}"
     prompt RECONFIGURE_ANS "Reconfigure domain/secrets/OAuth/Cursor key? [y/N]" "N"
     case "${RECONFIGURE_ANS}" in
       y|Y|yes|YES) RECONFIGURE=1 ;;
@@ -447,6 +523,7 @@ main() {
   fi
 
   ensure_repo
+  stop_docker_stack_if_present
 
   if [[ "${RECONFIGURE}" -eq 1 ]]; then
     load_env_defaults
@@ -458,13 +535,11 @@ main() {
   fi
 
   install_cursor_cli
+  install_app
   write_mcp_json
-  write_compose_override
-  compose_up
+  write_systemd_units
+  start_services
 
-  # Rewrite nginx / run certbot when site missing or domain changed.
-  # Secret-only reconfigure (same domain, site present) must not clobber Let's Encrypt SSL.
-  # Missing site alone still needs certbot even if .install-domain already matches DOMAIN.
   local prev_domain=""
   if [[ -f "${INSTALL_DOMAIN_FILE}" ]]; then
     prev_domain="$(tr -d '[:space:]' < "${INSTALL_DOMAIN_FILE}" || true)"
@@ -486,7 +561,7 @@ main() {
   fi
 
   finish_marker
-  log "Install finished (mode=${mode})."
+  log "Install finished (mode=${mode}, host/systemd)."
 }
 
 main "$@"

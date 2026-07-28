@@ -12,7 +12,7 @@ export function resolveCursorCliPath(): string {
 }
 
 export function resolveAgentWorkspace(): string {
-  return process.env.AGENT_WORKSPACE?.trim() || "/opt/newsdigest";
+  return process.env.AGENT_WORKSPACE?.trim() || "/opt/newsdigest/workspace";
 }
 
 /**

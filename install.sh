@@ -3,13 +3,16 @@
 set -euo pipefail
 
 INSTALL_ROOT=/opt/newsdigest
+BUILD_ROOT=/var/tmp/newsdigest-build
 REPO_URL=https://github.com/rborisov/newsdigest.git
 MARKER="${INSTALL_ROOT}/.installed"
 DATA_DIR="${INSTALL_ROOT}/data"
+WORKSPACE_DIR="${INSTALL_ROOT}/workspace"
 NGINX_SITE=/etc/nginx/sites-available/newsdigest
 MCP_JSON="${INSTALL_ROOT}/mcp.json"
 MCP_HOME_JSON=/root/.cursor/mcp.json
 INSTALL_DOMAIN_FILE="${INSTALL_ROOT}/.install-domain"
+INSTALL_REV_FILE="${INSTALL_ROOT}/.install-rev"
 WEB_UNIT=/etc/systemd/system/newsdigest-web.service
 WORKER_UNIT=/etc/systemd/system/newsdigest-worker.service
 SWAPFILE=/swapfile
@@ -49,7 +52,7 @@ require_ubuntu() {
 }
 
 is_installed() {
-  [[ -f "${MARKER}" && -f "${INSTALL_ROOT}/package.json" && -f "${WEB_UNIT}" ]]
+  [[ -f "${MARKER}" && -f "${WEB_UNIT}" && -f "${INSTALL_ROOT}/apps/web/.next/standalone/apps/web/server.js" ]]
 }
 
 prompt() {
@@ -156,27 +159,96 @@ install_packages() {
   systemctl is-active --quiet nginx || die "nginx.service failed to start"
 }
 
-ensure_repo() {
-  if [[ ! -d "${INSTALL_ROOT}/.git" ]]; then
-    mkdir -p "$(dirname "${INSTALL_ROOT}")"
-    if [[ -d "${INSTALL_ROOT}" ]] && [[ -n "$(ls -A "${INSTALL_ROOT}" 2>/dev/null || true)" ]]; then
-      # Previous Docker install left a checkout — reuse if it is this repo.
-      if [[ -f "${INSTALL_ROOT}/package.json" ]]; then
-        log "${INSTALL_ROOT} exists; using existing tree (will git pull if .git present)"
-        if [[ ! -d "${INSTALL_ROOT}/.git" ]]; then
-          die "${INSTALL_ROOT} exists without .git. Move it aside and re-run."
-        fi
-      else
-        die "${INSTALL_ROOT} exists but is not a newsdigest checkout. Move it aside and re-run."
-      fi
-    else
-      log "Cloning ${REPO_URL} → ${INSTALL_ROOT}"
-      git clone "${REPO_URL}" "${INSTALL_ROOT}"
-    fi
-  else
-    log "Updating repo at ${INSTALL_ROOT} (git pull --ff-only)"
-    git -C "${INSTALL_ROOT}" pull --ff-only
+# Shallow clone into a disposable build tree (not the runtime root).
+ensure_build_tree() {
+  log "Fetching source into ${BUILD_ROOT} (shallow; discarded after install)"
+  rm -rf "${BUILD_ROOT}"
+  mkdir -p "$(dirname "${BUILD_ROOT}")"
+  git clone --depth 1 --branch main "${REPO_URL}" "${BUILD_ROOT}"
+}
+
+# Keep only what systemd / MCP / Cursor need under INSTALL_ROOT.
+stage_runtime_from_build() {
+  local rev
+  rev="$(git -C "${BUILD_ROOT}" rev-parse --short HEAD)"
+  log "Staging slim runtime → ${INSTALL_ROOT} (rev ${rev})"
+
+  mkdir -p \
+    "${INSTALL_ROOT}/apps/web/.next" \
+    "${INSTALL_ROOT}/apps/worker" \
+    "${INSTALL_ROOT}/apps/mcp-server" \
+    "${INSTALL_ROOT}/apps/web/prisma" \
+    "${DATA_DIR}" \
+    "${WORKSPACE_DIR}"
+
+  # Web: Next standalone only
+  rm -rf "${INSTALL_ROOT}/apps/web/.next/standalone"
+  cp -a "${BUILD_ROOT}/apps/web/.next/standalone" "${INSTALL_ROOT}/apps/web/.next/standalone"
+
+  # Worker + MCP: compiled JS + package.json (prod install next)
+  rm -rf "${INSTALL_ROOT}/apps/worker/dist" "${INSTALL_ROOT}/apps/mcp-server/dist"
+  cp -a "${BUILD_ROOT}/apps/worker/dist" "${INSTALL_ROOT}/apps/worker/dist"
+  cp -a "${BUILD_ROOT}/apps/mcp-server/dist" "${INSTALL_ROOT}/apps/mcp-server/dist"
+  cp -f "${BUILD_ROOT}/apps/worker/package.json" "${INSTALL_ROOT}/apps/worker/package.json"
+  cp -f "${BUILD_ROOT}/apps/mcp-server/package.json" "${INSTALL_ROOT}/apps/mcp-server/package.json"
+
+  # Prisma schema for generate / future db ops
+  cp -f "${BUILD_ROOT}/apps/web/prisma/schema.prisma" "${INSTALL_ROOT}/apps/web/prisma/schema.prisma"
+  cp -f "${BUILD_ROOT}/apps/web/prisma/seed.ts" "${INSTALL_ROOT}/apps/web/prisma/seed.ts"
+
+  # Tiny marker README in agent workspace (no app source)
+  cat > "${WORKSPACE_DIR}/README.md" <<'EOF'
+Cursor agent workspace for newsdigest. Digests are published via MCP; do not store secrets here.
+EOF
+
+  printf '%s\n' "${rev}" > "${INSTALL_REV_FILE}"
+
+  # Drop leftover full-tree clutter from older installs
+  rm -rf \
+    "${INSTALL_ROOT}/.git" \
+    "${INSTALL_ROOT}/docs" \
+    "${INSTALL_ROOT}/node_modules" \
+    "${INSTALL_ROOT}/apps/web/src" \
+    "${INSTALL_ROOT}/apps/web/node_modules" \
+    "${INSTALL_ROOT}/apps/web/.next/cache" \
+    "${INSTALL_ROOT}/package.json" \
+    "${INSTALL_ROOT}/package-lock.json" \
+    "${INSTALL_ROOT}/docker-compose.yml" \
+    "${INSTALL_ROOT}/docker-compose.override.yml" \
+    "${INSTALL_ROOT}/.dockerignore" \
+    "${INSTALL_ROOT}/README.md" \
+    "${INSTALL_ROOT}/install.sh" \
+    "${INSTALL_ROOT}/.env.example" \
+    "${INSTALL_ROOT}/apps/web/Dockerfile" \
+    "${INSTALL_ROOT}/apps/worker/Dockerfile" \
+    "${INSTALL_ROOT}/apps/worker/src" \
+    "${INSTALL_ROOT}/apps/mcp-server/src" \
+    "${INSTALL_ROOT}/apps/web/public" \
+    "${INSTALL_ROOT}/apps/web/tsconfig.json" \
+    "${INSTALL_ROOT}/apps/web/next.config.ts" \
+    "${INSTALL_ROOT}/apps/web/eslint.config.mjs" \
+    "${INSTALL_ROOT}/apps/web/next-env.d.ts" \
+    "${INSTALL_ROOT}/apps/web/CLAUDE.md" \
+    "${INSTALL_ROOT}/apps/web/AGENTS.md" \
+    "${INSTALL_ROOT}/apps/web/README.md" || true
+
+  # Old .next leftovers besides standalone
+  if [[ -d "${INSTALL_ROOT}/apps/web/.next" ]]; then
+    find "${INSTALL_ROOT}/apps/web/.next" -mindepth 1 -maxdepth 1 ! -name standalone -exec rm -rf {} +
   fi
+}
+
+install_runtime_node_deps() {
+  log "Installing production deps for worker + MCP only"
+  (
+    cd "${INSTALL_ROOT}/apps/worker"
+    npm install --omit=dev --no-audit --no-fund
+    npx prisma generate --schema=../web/prisma/schema.prisma
+  )
+  (
+    cd "${INSTALL_ROOT}/apps/mcp-server"
+    npm install --omit=dev --no-audit --no-fund
+  )
 }
 
 load_env_defaults() {
@@ -291,7 +363,7 @@ INTERNAL_API_KEY=${INTERNAL_API_KEY}
 
 CURSOR_API_KEY=${CURSOR_API_KEY}
 CURSOR_CLI_PATH=/usr/local/bin/agent
-AGENT_WORKSPACE=${INSTALL_ROOT}
+AGENT_WORKSPACE=${WORKSPACE_DIR}
 
 TELEGRAPH_ACCESS_TOKEN=${TELEGRAPH_ACCESS_TOKEN}
 
@@ -342,18 +414,16 @@ write_mcp_json() {
   fi
   [[ -n "${INTERNAL_API_KEY}" ]] || die "INTERNAL_API_KEY is required for MCP config."
 
-  local key_json tsx_bin
+  local key_json
   key_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${INTERNAL_API_KEY}")"
-  tsx_bin="${INSTALL_ROOT}/node_modules/.bin/tsx"
-  [[ -x "${tsx_bin}" ]] || tsx_bin="npx"
 
   mkdir -p /root/.cursor
   cat > "${MCP_JSON}" <<EOF
 {
   "mcpServers": {
     "news-digest": {
-      "command": "${tsx_bin}",
-      "args": ["${INSTALL_ROOT}/apps/mcp-server/src/index.ts"],
+      "command": "/usr/bin/node",
+      "args": ["${INSTALL_ROOT}/apps/mcp-server/dist/index.js"],
       "env": {
         "PORTAL_URL": "http://127.0.0.1:3000",
         "INTERNAL_API_KEY": ${key_json}
@@ -383,6 +453,7 @@ write_cursor_cli_automation_config() {
       "Read(**)",
       "Write(/tmp/**)",
       "Write(/opt/newsdigest/data/**)",
+      "Write(/opt/newsdigest/workspace/**)",
       "WebFetch(*)",
       "Mcp(*:*)"
     ],
@@ -403,7 +474,7 @@ EOF
     "default": "allow",
     "allow": ["127.0.0.1", "localhost", "0.0.0.0/0"]
   },
-  "additionalReadonlyPaths": ["/opt/newsdigest"]
+  "additionalReadonlyPaths": ["/opt/newsdigest", "/opt/newsdigest/workspace"]
 }
 EOF
   chmod 0644 /root/.cursor/sandbox.json
@@ -452,12 +523,12 @@ Wants=newsdigest-web.service
 
 [Service]
 Type=simple
-WorkingDirectory=${INSTALL_ROOT}
+WorkingDirectory=${INSTALL_ROOT}/apps/worker
 EnvironmentFile=${INSTALL_ROOT}/.env
 Environment=NODE_ENV=production
 Environment=HOME=/root
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/npm run start --workspace=worker
+ExecStart=/usr/bin/node dist/index.js
 Restart=on-failure
 RestartSec=5
 Environment=NODE_OPTIONS=--max-old-space-size=256
@@ -470,7 +541,7 @@ EOF
 }
 
 prepare_standalone() {
-  local web="${INSTALL_ROOT}/apps/web"
+  local web="${BUILD_ROOT}/apps/web"
   local standalone="${web}/.next/standalone"
   [[ -f "${standalone}/apps/web/server.js" ]] || die "standalone server missing at ${standalone}/apps/web/server.js — build failed?"
 
@@ -483,59 +554,40 @@ prepare_standalone() {
 }
 
 install_app() {
-  local force_deps=0 force_build=0
-  # First install always does full deps + build.
-  if [[ ! -f "${MARKER}" ]]; then
-    force_deps=1
-    force_build=1
-  fi
-
-  log "Preparing application under ${INSTALL_ROOT}"
-  cd "${INSTALL_ROOT}" || die "Cannot cd to ${INSTALL_ROOT}"
-  mkdir -p "${DATA_DIR}"
+  log "Building application in ${BUILD_ROOT}"
+  cd "${BUILD_ROOT}" || die "Cannot cd to ${BUILD_ROOT}"
+  mkdir -p "${DATA_DIR}" "${WORKSPACE_DIR}"
 
   export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
+  # Point Prisma at the runtime DB while building/seeding
+  export DATABASE_URL="file:${DATA_DIR}/digest.db"
 
-  local lock_hash="" lock_file="${INSTALL_ROOT}/.install-npm-hash"
-  local build_rev_file="${INSTALL_ROOT}/.install-build-rev"
-  local head_rev
-  head_rev="$(git -C "${INSTALL_ROOT}" rev-parse HEAD)"
-
-  if [[ -f package-lock.json ]]; then
-    lock_hash="$(sha256sum package-lock.json | awk '{print $1}')"
-  fi
-
-  if [[ "${force_deps}" -eq 1 ]] \
-    || [[ ! -d node_modules ]] \
-    || [[ -z "${lock_hash}" ]] \
-    || [[ ! -f "${lock_file}" ]] \
-    || [[ "$(cat "${lock_file}" 2>/dev/null || true)" != "${lock_hash}" ]]; then
-    log "Installing npm dependencies (package-lock changed or node_modules missing)…"
-    npm ci --no-audit --no-fund
-    printf '%s\n' "${lock_hash}" > "${lock_file}"
-  else
-    log "package-lock unchanged — skipping npm ci"
-  fi
+  log "Installing npm dependencies (build tree)…"
+  npm ci --no-audit --no-fund
 
   log "Generating Prisma client…"
   npx prisma generate --schema=apps/web/prisma/schema.prisma
 
-  if [[ "${force_build}" -eq 1 ]] \
-    || [[ ! -f apps/web/.next/standalone/apps/web/server.js ]] \
-    || [[ ! -f "${build_rev_file}" ]] \
-    || [[ "$(cat "${build_rev_file}" 2>/dev/null || true)" != "${head_rev}" ]]; then
-    log "Building Next.js (revision ${head_rev})…"
-    npm run build --workspace=web
-    prepare_standalone
-    printf '%s\n' "${head_rev}" > "${build_rev_file}"
-  else
-    log "Already built at ${head_rev} — skipping next build"
-  fi
+  log "Building Next.js standalone…"
+  npm run build --workspace=web
+  prepare_standalone
 
-  log "Applying database schema…"
+  log "Compiling worker + MCP…"
+  npm run build --workspace=worker
+  npm run build --workspace=mcp-server
+
+  log "Applying database schema + seed…"
   npm run db:push --workspace=web
-  # Seed every run is cheap and keeps ALLOWED_EMAILS rows present (does not re-promote admins).
   npm run db:seed --workspace=web
+
+  stage_runtime_from_build
+  install_runtime_node_deps
+
+  log "Removing build tree ${BUILD_ROOT}"
+  rm -rf "${BUILD_ROOT}"
+
+  log "Runtime install ready at ${INSTALL_ROOT}"
+  du -sh "${INSTALL_ROOT}" "${DATA_DIR}" 2>/dev/null || true
 }
 
 start_services() {
@@ -616,6 +668,24 @@ finish_marker() {
   log "Re-run this script anytime to update."
 }
 
+# Keep AGENT_WORKSPACE current on updates without full reconfigure.
+patch_env_slim_paths() {
+  local env_file="${INSTALL_ROOT}/.env"
+  [[ -f "${env_file}" ]] || return 0
+  if grep -q '^AGENT_WORKSPACE=' "${env_file}"; then
+    sed -i "s|^AGENT_WORKSPACE=.*|AGENT_WORKSPACE=${WORKSPACE_DIR}|" "${env_file}"
+  else
+    printf '\nAGENT_WORKSPACE=%s\n' "${WORKSPACE_DIR}" >> "${env_file}"
+  fi
+}
+
+stop_host_services() {
+  if systemctl list-unit-files newsdigest-web.service >/dev/null 2>&1; then
+    log "Stopping newsdigest services before replacing runtime…"
+    systemctl stop newsdigest-worker newsdigest-web 2>/dev/null || true
+  fi
+}
+
 main() {
   require_root
   require_ubuntu
@@ -634,8 +704,11 @@ main() {
     RECONFIGURE=1
   fi
 
-  ensure_repo
+  ensure_build_tree
   stop_docker_stack_if_present
+  stop_host_services
+
+  mkdir -p "${INSTALL_ROOT}" "${DATA_DIR}" "${WORKSPACE_DIR}"
 
   if [[ "${RECONFIGURE}" -eq 1 ]]; then
     load_env_defaults
@@ -644,6 +717,7 @@ main() {
   else
     load_env_defaults
     resolve_domain_for_update
+    patch_env_slim_paths
   fi
 
   install_cursor_cli
@@ -673,7 +747,8 @@ main() {
   fi
 
   finish_marker
-  log "Install finished (mode=${mode}, host/systemd)."
+  log "Install finished (mode=${mode}, slim runtime — no full git tree under ${INSTALL_ROOT})."
+  log "Build cache discarded from ${BUILD_ROOT}."
 }
 
 main "$@"

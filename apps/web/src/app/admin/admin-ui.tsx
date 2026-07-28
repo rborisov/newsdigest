@@ -182,8 +182,9 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
         </button>
       </div>
       <p style={messageStyle}>
-        Auto-refreshes every 5s while a job is pending/running, otherwise every 30s. Agent stdout/stderr is written
-        under the data logs directory and tailed below for each job.
+        Auto-refreshes every 5s while a job is pending/running, otherwise every 30s. Expand a job to see
+        the agent log tail (stdout/stderr + 15s heartbeats). On the server:{" "}
+        <code>tail -f /opt/newsdigest/data/logs/&lt;jobId&gt;.log</code>
       </p>
       <StatusMessage error={error} />
       <table style={tableStyle}>
@@ -260,7 +261,9 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
                         >
                           {job.logTail?.trim()
                             ? job.logTail
-                            : "(no agent log yet — waiting for Cursor CLI output)"}
+                            : job.status === "running" || job.status === "pending"
+                              ? "(no log lines yet — if this job started before log capture, start a new Generate after updating the app. New jobs write heartbeats every 15s to data/logs/<jobId>.log even when Cursor is quiet.)"
+                              : "(no agent log for this job)"}
                         </pre>
                       </td>
                     </tr>

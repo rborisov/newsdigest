@@ -52,11 +52,18 @@ describe("digest-display", () => {
   it("merges topic and story tags for the list", () => {
     const tags = digestListTags({
       title: "Digest · 2026-07-28 15:32 UTC · Opportunities · Выставки",
-      storyTitles: ["Source story one"],
+      storyTitles: ["Source", "Amazon Leo filing"],
       limit: 5,
     });
     assert.deepEqual(tags.slice(0, 2), ["Opportunities", "Выставки"]);
-    assert.match(tags.join(" "), /Source/);
+    assert.equal(tags.includes("Source"), false);
+    assert.match(tags.join(" "), /Amazon/);
+  });
+
+  it("drops noise story labels like Source", () => {
+    assert.deepEqual(digestContentTags(["Source", "Read more", "Real headline here"], 3), [
+      "Real headline here",
+    ]);
   });
 
   it("builds index link labels with time and story tags", () => {

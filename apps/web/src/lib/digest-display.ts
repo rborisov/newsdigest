@@ -79,6 +79,20 @@ export function formatIndexLinkLabel(input: {
   return when;
 }
 
+/** Labels that appear as Telegra.ph / HTML link text, not real headlines. */
+const NOISE_TAG = /^(source|sources|link|read more|more|here|click|url|http|https|www)$/i;
+
+function isUsefulTag(tag: string): boolean {
+  const trimmed = tag.trim();
+  if (trimmed.length < 3) {
+    return false;
+  }
+  if (NOISE_TAG.test(trimmed)) {
+    return false;
+  }
+  return true;
+}
+
 /** Merge topic + story chips for the portal list (deduped). */
 export function digestListTags(input: {
   title: string;
@@ -89,7 +103,11 @@ export function digestListTags(input: {
   const tags: string[] = [];
   const seen = new Set<string>();
 
-  for (const tag of [...topicsFromDigestTitle(input.title), ...digestContentTags(input.storyTitles, limit)]) {
+  // Prefer topic names from the digest title; story titles are often "Source".
+  for (const tag of [...topicsFromDigestTitle(input.title), ...digestContentTags(input.storyTitles, limit * 2)]) {
+    if (!isUsefulTag(tag)) {
+      continue;
+    }
     const key = tag.toLowerCase();
     if (seen.has(key)) {
       continue;
@@ -113,7 +131,7 @@ export function digestContentTags(storyTitles: string[], limit = 4): string[] {
       .replace(/\s+/g, " ")
       .replace(/^[\d.)\-\s]+/, "")
       .trim();
-    if (!cleaned) {
+    if (!cleaned || !isUsefulTag(cleaned)) {
       continue;
     }
     const short =

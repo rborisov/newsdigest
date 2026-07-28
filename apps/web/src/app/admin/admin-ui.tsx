@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type AllowedUserRow = {
   id: string;
@@ -37,6 +37,16 @@ type TelegraphMetaRow = {
   authorUrl: string;
 };
 
+export type GenerationJobRow = {
+  id: string;
+  status: string;
+  triggerType: string;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedPage: { title: string; telegraphUrl: string } | null;
+};
+
 export type AdminInitialData = {
   signedInEmail: string;
   users: AllowedUserRow[];
@@ -45,6 +55,7 @@ export type AdminInitialData = {
   prompt: PromptConfigRow;
   telegraph: TelegraphMetaRow;
   cursorApiKeyConfigured: boolean;
+  jobs: GenerationJobRow[];
 };
 
 const sectionStyle = { marginBottom: "2.5rem" };
@@ -83,6 +94,104 @@ function StatusMessage({ message, error }: { message?: string; error?: string })
     return <p style={messageStyle}>{message}</p>;
   }
   return null;
+}
+
+function formatJobTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
+  const [jobs, setJobs] = useState(initialJobs);
+  const [error, setError] = useState<string>();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadJobs = useCallback(async () => {
+    setRefreshing(true);
+    const result = await adminFetch("/api/admin/jobs");
+    setRefreshing(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setError(undefined);
+    const data = result.data as { jobs?: GenerationJobRow[] };
+    setJobs(data.jobs ?? []);
+  }, []);
+
+  useEffect(() => {
+    setJobs(initialJobs);
+  }, [initialJobs]);
+
+  useEffect(() => {
+    const hasActive = jobs.some((job) => job.status === "pending" || job.status === "running");
+    const intervalMs = hasActive ? 5_000 : 30_000;
+    const timer = window.setInterval(() => {
+      void loadJobs();
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [jobs, loadJobs]);
+
+  return (
+    <section style={sectionStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem" }}>
+        <h2 style={headingStyle}>Generation jobs</h2>
+        <button type="button" style={buttonStyle} onClick={() => void loadJobs()} disabled={refreshing}>
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+      <p style={messageStyle}>
+        Auto-refreshes every 5s while a job is pending/running, otherwise every 30s. Agent console output is not
+        captured; status comes from the job record.
+      </p>
+      <StatusMessage error={error} />
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={cellStyle}>Status</th>
+            <th style={cellStyle}>Trigger</th>
+            <th style={cellStyle}>Created</th>
+            <th style={cellStyle}>Updated</th>
+            <th style={cellStyle}>Digest / error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {jobs.length === 0 ? (
+            <tr>
+              <td colSpan={5} style={cellStyle}>
+                No generation jobs yet.
+              </td>
+            </tr>
+          ) : (
+            jobs.map((job) => (
+              <tr key={job.id}>
+                <td style={cellStyle}>
+                  <code>{job.status}</code>
+                </td>
+                <td style={cellStyle}>{job.triggerType}</td>
+                <td style={cellStyle}>{formatJobTime(job.createdAt)}</td>
+                <td style={cellStyle}>{formatJobTime(job.updatedAt)}</td>
+                <td style={cellStyle}>
+                  {job.publishedPage ? (
+                    <a href={job.publishedPage.telegraphUrl} target="_blank" rel="noopener noreferrer">
+                      {job.publishedPage.title}
+                    </a>
+                  ) : job.error ? (
+                    <span style={{ color: "#b00020" }}>{job.error}</span>
+                  ) : (
+                    <span style={{ color: "#666" }}>—</span>
+                  )}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </section>
+  );
 }
 
 function PeopleSection({ initialUsers }: { initialUsers: AllowedUserRow[] }) {
@@ -673,6 +782,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
         <Link href="/">Back to home</Link>
       </header>
 
+      <JobsSection initialJobs={data.jobs} />
       <PeopleSection initialUsers={data.users} />
       <PromptSection initialPrompt={data.prompt} />
       <TopicsSection initialTopics={data.topics} />

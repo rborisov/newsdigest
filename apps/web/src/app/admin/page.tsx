@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 export default async function AdminPage() {
   const session = await requireAdmin();
 
-  const [users, topics, schedules, prompt, telegraph] = await Promise.all([
+  const [users, topics, schedules, prompt, telegraph, jobs] = await Promise.all([
     prisma.allowedUser.findMany({
       orderBy: [{ isAdmin: "desc" }, { email: "asc" }],
       select: { id: true, email: true, isAdmin: true },
@@ -42,6 +42,21 @@ export default async function AdminPage() {
         authorUrl: true,
       },
     }),
+    prisma.generationJob.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        status: true,
+        triggerType: true,
+        error: true,
+        createdAt: true,
+        updatedAt: true,
+        publishedPage: {
+          select: { title: true, telegraphUrl: true },
+        },
+      },
+    }),
   ]);
 
   if (!prompt || !telegraph) {
@@ -62,6 +77,11 @@ export default async function AdminPage() {
           authorUrl: telegraph.authorUrl,
         },
         cursorApiKeyConfigured: Boolean(process.env.CURSOR_API_KEY?.trim()),
+        jobs: jobs.map((job) => ({
+          ...job,
+          createdAt: job.createdAt.toISOString(),
+          updatedAt: job.updatedAt.toISOString(),
+        })),
       }}
     />
   );

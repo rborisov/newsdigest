@@ -14,6 +14,8 @@ type ScheduleRow = {
 };
 
 const RELOAD_INTERVAL_MS = 60_000;
+const DB_RETRY_MS = 5_000;
+const DB_RETRY_MAX = 24;
 
 const prisma = new PrismaClient();
 const jobs = new Map<string, ManagedJob>();
@@ -94,6 +96,26 @@ function needsRecreate(existing: ManagedJob, schedule: ScheduleRow): boolean {
   );
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isDatabaseNotReadyError(error: unknown): boolean {
+  if (error && typeof error === "object" && "code" in error) {
+    const code = (error as { code?: string }).code;
+    if (code === "P2021" || code === "P1001") {
+      return true;
+    }
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("no such table") ||
+    message.includes("SQLITE_ERROR") ||
+    message.includes("Unable to open the database file")
+  );
+}
+
 async function reloadSchedules(): Promise<void> {
   const schedules = await prisma.schedule.findMany({
     where: { enabled: true },
@@ -130,6 +152,24 @@ async function reloadSchedules(): Promise<void> {
   }
 }
 
+async function reloadSchedulesWithRetry(): Promise<void> {
+  for (let attempt = 1; attempt <= DB_RETRY_MAX; attempt++) {
+    try {
+      await reloadSchedules();
+      return;
+    } catch (error) {
+      if (!isDatabaseNotReadyError(error) || attempt === DB_RETRY_MAX) {
+        throw error;
+      }
+
+      console.warn(
+        `[scheduler] database not ready (attempt ${attempt}/${DB_RETRY_MAX}), retrying in ${DB_RETRY_MS}ms...`,
+      );
+      await sleep(DB_RETRY_MS);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   requireEnv("DATABASE_URL");
   requireEnv("PORTAL_URL");
@@ -137,10 +177,14 @@ async function main(): Promise<void> {
 
   console.log("[scheduler] worker starting");
 
-  await reloadSchedules();
+  await reloadSchedulesWithRetry();
 
   setInterval(() => {
     void reloadSchedules().catch((error) => {
+      if (isDatabaseNotReadyError(error)) {
+        console.warn("[scheduler] database not ready during reload, will retry on next interval");
+        return;
+      }
       console.error("[scheduler] reload failed:", error);
     });
   }, RELOAD_INTERVAL_MS);

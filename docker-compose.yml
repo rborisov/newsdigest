@@ -12,6 +12,18 @@ services:
     volumes:
       - digest-data:/app/data
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
     # Host CLI option (TN-0005 §5): mount Cursor CLI + repo MCP path, then set CURSOR_CLI_PATH.
     # volumes:
     #   - /usr/local/bin/agent:/usr/local/bin/agent:ro
@@ -31,7 +43,8 @@ services:
     volumes:
       - digest-data:/app/data
     depends_on:
-      - web
+      web:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

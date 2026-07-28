@@ -967,10 +967,46 @@ function KeysSection({
   );
 }
 
+const ADMIN_TABS = [
+  { id: "jobs", label: "Jobs" },
+  { id: "people", label: "People" },
+  { id: "content", label: "Prompt & topics" },
+  { id: "keys", label: "API keys" },
+] as const;
+
+type AdminTabId = (typeof ADMIN_TABS)[number]["id"];
+
+function isAdminTabId(value: string): value is AdminTabId {
+  return ADMIN_TABS.some((item) => item.id === value);
+}
+
 export function AdminClient({ data }: { data: AdminInitialData }) {
+  const [tab, setTab] = useState<AdminTabId>("jobs");
+
+  useEffect(() => {
+    const fromHash = window.location.hash.replace(/^#/, "");
+    if (isAdminTabId(fromHash)) {
+      setTab(fromHash);
+    }
+  }, []);
+
+  function selectTab(next: AdminTabId) {
+    setTab(next);
+    window.history.replaceState(null, "", `#${next}`);
+  }
+
+  const tabButtonStyle = (active: boolean) => ({
+    ...buttonStyle,
+    borderBottom: active ? "2px solid #222" : "2px solid transparent",
+    borderRadius: 0,
+    background: "transparent",
+    fontWeight: active ? 600 : 400,
+    color: active ? "#111" : "#666",
+  });
+
   return (
     <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "56rem", margin: "0 auto" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem", marginBottom: "2rem" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem", marginBottom: "1.25rem" }}>
         <div>
           <h1>Admin</h1>
           <p style={{ color: "#666", marginTop: "0.25rem" }}>Signed in as {data.signedInEmail}</p>
@@ -978,15 +1014,45 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
         <Link href="/">Back to home</Link>
       </header>
 
-      <JobsSection initialJobs={data.jobs} />
-      <PeopleSection initialUsers={data.users} />
-      <PromptSection initialPrompt={data.prompt} />
-      <TopicsSection initialTopics={data.topics} />
-      <SchedulesSection initialSchedules={data.schedules} />
-      <KeysSection
-        initialTelegraph={data.telegraph}
-        cursorApiKeyConfigured={data.cursorApiKeyConfigured}
-      />
+      <nav
+        aria-label="Admin sections"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.25rem 0.5rem",
+          borderBottom: "1px solid #ddd",
+          marginBottom: "1.75rem",
+        }}
+      >
+        {ADMIN_TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            style={tabButtonStyle(tab === item.id)}
+            aria-current={tab === item.id ? "page" : undefined}
+            onClick={() => selectTab(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "jobs" ? <JobsSection initialJobs={data.jobs} /> : null}
+      {tab === "people" ? <PeopleSection initialUsers={data.users} /> : null}
+      {tab === "content" ? (
+        <>
+          <PromptSection initialPrompt={data.prompt} />
+          <TopicsSection initialTopics={data.topics} />
+          <SchedulesSection initialSchedules={data.schedules} />
+        </>
+      ) : null}
+      {tab === "keys" ? (
+        <KeysSection
+          initialTelegraph={data.telegraph}
+          cursorApiKeyConfigured={data.cursorApiKeyConfigured}
+        />
+      ) : null}
     </main>
   );
 }
+

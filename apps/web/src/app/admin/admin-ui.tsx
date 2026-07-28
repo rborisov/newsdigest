@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useState } from "react";
 
 import { SiteHeader } from "@/app/site-header";
+import { SignOutButton } from "@/app/sign-out-button";
 
 type AllowedUserRow = {
   id: string;
@@ -1015,6 +1016,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
               Home
             </Link>
             <span className="status-inline">Signed in as {data.signedInEmail}</span>
+            <SignOutButton />
           </>
         }
       />

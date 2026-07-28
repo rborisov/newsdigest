@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { GenerateButton } from "@/app/generate-button";
+import { SignOutButton } from "@/app/sign-out-button";
 import { SiteHeader } from "@/app/site-header";
 import { auth } from "@/lib/auth";
 import {
@@ -31,6 +32,7 @@ export default async function HomePage() {
     auth(),
   ]);
 
+  const isSignedIn = Boolean(session?.user?.email);
   const isAdmin = session?.user?.isAdmin ?? false;
   const currentIndexUrl = meta?.currentIndexUrl?.trim() ?? "";
 
@@ -38,12 +40,17 @@ export default async function HomePage() {
     <main className="shell">
       <SiteHeader
         actions={
-          isAdmin ? (
+          isSignedIn ? (
             <>
-              <Link href="/admin" className="nav-link">
-                Admin
-              </Link>
-              <GenerateButton />
+              {isAdmin ? (
+                <>
+                  <Link href="/admin" className="nav-link">
+                    Admin
+                  </Link>
+                  <GenerateButton />
+                </>
+              ) : null}
+              <SignOutButton />
             </>
           ) : (
             <Link href="/auth/signin" className="nav-link">

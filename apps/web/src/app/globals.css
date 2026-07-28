@@ -143,6 +143,8 @@ select {
   font-size: 0.9rem;
   font-weight: 500;
   border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
@@ -150,6 +152,11 @@ select {
   background: var(--surface);
   border-color: var(--line);
   color: var(--ink);
+}
+
+form:has(> .nav-link) {
+  display: inline-flex;
+  margin: 0;
 }
 
 .btn {

@@ -2,6 +2,17 @@
 
 Monorepo for the News Digest portal (Option A: Cursor CLI + stdio MCP on VPS → Telegra.ph).
 
+## VPS install (Ubuntu)
+
+As root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rborisov/newsdigest/main/install.sh | bash
+```
+
+Installs Docker, nginx, Let's Encrypt, Cursor CLI (host), clones to `/opt/newsdigest`, and starts Compose.
+Re-run the same command (or `/opt/newsdigest/install.sh`) to update; you will be asked whether to reconfigure secrets (default no).
+
 ## Structure
 
 ```

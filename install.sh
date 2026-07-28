@@ -6,7 +6,8 @@ REPO_URL=https://github.com/rborisov/newsdigest.git
 MARKER="${INSTALL_ROOT}/.installed"
 COMPOSE_OVERRIDE="${INSTALL_ROOT}/docker-compose.override.yml"
 NGINX_SITE=/etc/nginx/sites-available/newsdigest
-MCP_JSON=/root/.cursor/mcp.json
+MCP_JSON="${INSTALL_ROOT}/mcp.json"
+INSTALL_DOMAIN_FILE="${INSTALL_ROOT}/.install-domain"
 
 DOMAIN=""
 LE_EMAIL=""
@@ -278,6 +279,133 @@ EOF
   chmod 600 "${env_file}"
 }
 
+install_cursor_cli() {
+  log "Installing/updating Cursor CLI"
+  curl -fsS https://cursor.com/install | bash
+  # Official installer puts agent under ~/.local/bin for the current user (root → /root/.local/bin)
+  local agent_src=""
+  if [[ -x /root/.local/bin/agent ]]; then
+    agent_src=/root/.local/bin/agent
+  elif command -v agent >/dev/null 2>&1; then
+    agent_src="$(command -v agent)"
+  else
+    die "Cursor CLI installed but 'agent' not found on PATH."
+  fi
+  ln -sfn "${agent_src}" /usr/local/bin/agent
+  # Prefer update when available
+  if /usr/local/bin/agent update >/dev/null 2>&1; then
+    log "Cursor CLI updated"
+  fi
+  /usr/local/bin/agent --version || die "agent --version failed"
+}
+
+write_mcp_json() {
+  log "Writing MCP config ${MCP_JSON}"
+  if [[ -z "${INTERNAL_API_KEY}" ]]; then
+    load_env_defaults
+  fi
+  [[ -n "${INTERNAL_API_KEY}" ]] || die "INTERNAL_API_KEY is required for MCP config."
+
+  local key_json
+  key_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${INTERNAL_API_KEY}")"
+
+  cat > "${MCP_JSON}" <<EOF
+{
+  "mcpServers": {
+    "news-digest": {
+      "command": "tsx",
+      "args": ["/opt/newsdigest/apps/mcp-server/src/index.ts"],
+      "env": {
+        "PORTAL_URL": "http://127.0.0.1:3000",
+        "INTERNAL_API_KEY": ${key_json}
+      }
+    }
+  }
+}
+EOF
+  chmod 0644 "${MCP_JSON}"
+}
+
+write_compose_override() {
+  log "Writing ${COMPOSE_OVERRIDE}"
+  # ${CURSOR_API_KEY} is left for Compose to interpolate from .env (quoted heredoc).
+  cat > "${COMPOSE_OVERRIDE}" <<'EOF'
+# managed-by: newsdigest-install
+services:
+  web:
+    environment:
+      CURSOR_CLI_PATH: /usr/local/bin/agent
+      HOME: /home/nextjs
+      CURSOR_API_KEY: ${CURSOR_API_KEY}
+    volumes:
+      - /usr/local/bin/agent:/usr/local/bin/agent:ro
+      - /root/.local/share/cursor-agent:/home/nextjs/.local/share/cursor-agent:ro
+      - /opt/newsdigest/mcp.json:/home/nextjs/.cursor/mcp.json:ro
+      - ./apps/mcp-server:/opt/newsdigest/apps/mcp-server:ro
+EOF
+}
+
+compose_up() {
+  log "Building and starting Docker Compose stack"
+  cd "${INSTALL_ROOT}" || die "Cannot cd to ${INSTALL_ROOT}"
+  # Never remove digest-data or other volumes.
+  docker compose up -d --build
+}
+
+configure_nginx() {
+  [[ -n "${DOMAIN}" ]] || die "DOMAIN is required for nginx."
+  log "Configuring nginx site for ${DOMAIN}"
+  cat > "${NGINX_SITE}" <<EOF
+# managed-by: newsdigest-install
+server {
+  listen 80;
+  listen [::]:80;
+  server_name ${DOMAIN};
+
+  location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+}
+EOF
+  ln -sfn "${NGINX_SITE}" /etc/nginx/sites-enabled/newsdigest
+  nginx -t || die "nginx -t failed"
+  systemctl reload nginx
+}
+
+obtain_certificate() {
+  [[ -n "${DOMAIN}" ]] || die "DOMAIN is required for certbot."
+  if [[ -z "${LE_EMAIL}" ]]; then
+    load_env_defaults
+  fi
+  [[ -n "${LE_EMAIL}" ]] || die "LE_EMAIL is required for certbot."
+  log "Obtaining Let's Encrypt certificate for ${DOMAIN}"
+  certbot --nginx -d "${DOMAIN}" --email "${LE_EMAIL}" --agree-tos --non-interactive --redirect
+}
+
+resolve_domain_for_update() {
+  # On non-reconfigure update: prefer tracked domain, then .env / NEXTAUTH_URL.
+  if [[ -f "${INSTALL_DOMAIN_FILE}" ]]; then
+    DOMAIN="$(tr -d '[:space:]' < "${INSTALL_DOMAIN_FILE}")"
+  fi
+  if [[ -z "${DOMAIN}" ]]; then
+    load_env_defaults
+  fi
+  [[ -n "${DOMAIN}" ]] || die "DOMAIN unknown; re-run with reconfigure or set NEXTAUTH_URL in .env."
+}
+
+finish_marker() {
+  touch "${MARKER}"
+  log "Done. Portal: https://${DOMAIN}"
+  log "Re-run this script anytime to update."
+}
+
 main() {
   require_root
   require_ubuntu
@@ -302,10 +430,32 @@ main() {
     load_env_defaults
     prompt_config
     write_env
+  else
+    load_env_defaults
+    resolve_domain_for_update
   fi
 
-  # Task 2 continues: CLI, MCP, override, compose, nginx, certbot, marker
-  log "Task 1 complete (mode=${mode}). Later steps are not yet wired (Task 2)."
+  install_cursor_cli
+  write_mcp_json
+  write_compose_override
+  compose_up
+
+  if [[ "${RECONFIGURE}" -eq 1 ]] || [[ ! -f "${NGINX_SITE}" ]]; then
+    configure_nginx
+  fi
+
+  local prev_domain=""
+  if [[ -f "${INSTALL_DOMAIN_FILE}" ]]; then
+    prev_domain="$(tr -d '[:space:]' < "${INSTALL_DOMAIN_FILE}")"
+  fi
+  # Certbot only on first install or domain change (not on every reconfigure).
+  if [[ -z "${prev_domain}" ]] || [[ "${prev_domain}" != "${DOMAIN}" ]]; then
+    obtain_certificate
+    printf '%s\n' "${DOMAIN}" > "${INSTALL_DOMAIN_FILE}"
+  fi
+
+  finish_marker
+  log "Install finished (mode=${mode})."
 }
 
 main "$@"

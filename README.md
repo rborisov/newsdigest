@@ -178,6 +178,8 @@ The portal spawns the CLI when an admin clicks **Generate now** or when the work
 
 Headless spawn uses `-p --force --sandbox disabled --trust --approve-mcps` so fetch/shell/MCP are not silently rejected. `install.sh` also writes `/root/.cursor/cli-config.json` (allow Shell/WebFetch/Mcp) and `sandbox.json` (allow localhost for portal MCP). Without those, job logs show “environment blocked” and no `digestUrl`.
 
+**Multi-step generation (option C):** each Generate creates one parent job with a `topic_draft` step per enabled topic, then a final `merge_publish` step. Draft agents call MCP `save_topic_draft`; only the merge step calls `publish_digest_page` (one Telegra.ph page).
+
 | Mode | When to use | Setup |
 |------|-------------|--------|
 | **Host CLI + Docker portal (VPS)** | Recommended small-VPS path | Install `agent` on the host; `install.sh` mounts it into `web` and mounts `mcp.json` → `/home/nextjs/.cursor/mcp.json`. MCP code/deps live **inside** the web image (`/app/mcp-server`). |

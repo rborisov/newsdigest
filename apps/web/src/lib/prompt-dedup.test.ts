@@ -13,7 +13,11 @@ import {
 import {
   applyPromptPlaceholders,
   appendJobMetadata,
+  appendTopicDraftMetadata,
+  buildMergePromptBody,
+  formatMergeDrafts,
   formatPromptDate,
+  formatTopicWithKeywords,
   formatTopicsList,
 } from "./prompt";
 
@@ -132,6 +136,57 @@ describe("prompt", () => {
       const prompt = appendJobMetadata("Base prompt", "job_123");
       assert.match(prompt, /Generation job ID: job_123/);
       assert.match(prompt, /publish_digest_page with jobId "job_123"/);
+    });
+  });
+
+  describe("formatTopicWithKeywords", () => {
+    it("includes keywords when present", () => {
+      assert.equal(
+        formatTopicWithKeywords({ name: "Private 5G", keywords: "campus, CBRS" }),
+        "- Private 5G\n  Keywords: campus, CBRS",
+      );
+    });
+
+    it("omits keywords line when empty", () => {
+      assert.equal(formatTopicWithKeywords({ name: "Open RAN", keywords: "  " }), "- Open RAN");
+    });
+  });
+
+  describe("appendTopicDraftMetadata", () => {
+    it("requires save_topic_draft and forbids publish", () => {
+      const prompt = appendTopicDraftMetadata("Base", "job_1", "Open RAN");
+      assert.match(prompt, /save_topic_draft/);
+      assert.match(prompt, /Topic name \(pass exactly to save_topic_draft\): Open RAN/);
+      assert.match(prompt, /Do NOT call publish_digest_page/);
+    });
+  });
+
+  describe("merge draft helpers", () => {
+    it("formats draft sections", () => {
+      const formatted = formatMergeDrafts([
+        { topicName: "A", html: "<p>one</p>" },
+        { topicName: "B", html: "" },
+      ]);
+      assert.match(formatted, /## Topic: A/);
+      assert.match(formatted, /<p>one<\/p>/);
+      assert.match(formatted, /## Topic: B/);
+      assert.match(formatted, /\(empty draft\)/);
+    });
+
+    it("builds merge body with excludes and drafts", () => {
+      const body = buildMergePromptBody(
+        {
+          topics: "",
+          periodHours: 24,
+          date: "2026-07-28",
+          excludeStories: "(none)",
+        },
+        [{ topicName: "LEO", html: "<p>Starlink</p>" }],
+      );
+      assert.match(body, /merging topic drafts/i);
+      assert.match(body, /## Topic: LEO/);
+      assert.match(body, /EXCLUDE_STORIES/);
+      assert.match(body, /Starlink/);
     });
   });
 });

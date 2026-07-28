@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { GenerationJobStatus } from "@prisma/client";
+import { GenerationJobStatus, GenerationStepStatus } from "@prisma/client";
 
 import {
   isStaleRunningJob,
@@ -36,37 +36,62 @@ describe("job-reconciliation", () => {
   });
 
   describe("reconcileStaleRunningJobs", () => {
-    it("fails only running jobs older than the cutoff", async () => {
+    it("fails stale jobs and their open steps", async () => {
       const now = new Date("2026-07-28T12:00:00.000Z");
-      let capturedWhere: unknown;
-      let capturedData: unknown;
+      let findWhere: unknown;
+      let txOps: unknown[] = [];
 
       const mockDb = {
         generationJob: {
-          updateMany: async ({
-            where,
-            data,
-          }: {
-            where: unknown;
-            data: unknown;
-          }) => {
-            capturedWhere = where;
-            capturedData = data;
-            return { count: 2 };
+          findMany: async ({ where }: { where: unknown }) => {
+            findWhere = where;
+            return [{ id: "job_a" }, { id: "job_b" }];
           },
+          updateMany: (args: unknown) => args,
+        },
+        generationStep: {
+          updateMany: (args: unknown) => args,
+        },
+        $transaction: async (ops: unknown[]) => {
+          txOps = ops;
+          return ops;
         },
       };
 
       const count = await reconcileStaleRunningJobs(mockDb as never, { now });
       assert.equal(count, 2);
-      assert.deepEqual(capturedWhere, {
+      assert.deepEqual(findWhere, {
         status: GenerationJobStatus.running,
         updatedAt: { lte: new Date(now.getTime() - STALE_RUNNING_JOB_MAX_AGE_MS) },
       });
-      assert.deepEqual(capturedData, {
-        status: GenerationJobStatus.failed,
-        error: STALE_JOB_ERROR,
+      assert.equal(txOps.length, 2);
+      assert.deepEqual(txOps[0], {
+        where: {
+          jobId: { in: ["job_a", "job_b"] },
+          status: { in: [GenerationStepStatus.pending, GenerationStepStatus.running] },
+        },
+        data: {
+          status: GenerationStepStatus.failed,
+          error: STALE_JOB_ERROR,
+        },
       });
+      assert.deepEqual(txOps[1], {
+        where: { id: { in: ["job_a", "job_b"] } },
+        data: {
+          status: GenerationJobStatus.failed,
+          error: STALE_JOB_ERROR,
+        },
+      });
+    });
+
+    it("returns 0 when no stale jobs", async () => {
+      const mockDb = {
+        generationJob: {
+          findMany: async () => [],
+        },
+      };
+      const count = await reconcileStaleRunningJobs(mockDb as never);
+      assert.equal(count, 0);
     });
   });
 });

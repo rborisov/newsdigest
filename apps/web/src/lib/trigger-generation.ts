@@ -1,9 +1,12 @@
 import { GenerationJobStatus, TriggerType } from "@prisma/client";
 
-import { spawnAgent } from "./cursor";
 import { prisma as defaultPrisma } from "./db";
+import {
+  createPipelineSteps,
+  failJobWithError,
+  startFirstPendingStep,
+} from "./generation-pipeline";
 import { reconcileStaleRunningJobs } from "./job-reconciliation";
-import { buildPrompt } from "./prompt";
 
 export type TriggerGenerationInput = {
   triggerType: TriggerType;
@@ -37,6 +40,20 @@ export async function triggerGeneration(
     };
   }
 
+  const topics = await defaultPrisma.topic.findMany({
+    where: { enabled: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true },
+  });
+
+  if (topics.length === 0) {
+    return {
+      ok: false,
+      error: "No enabled topics. Add or enable at least one topic in Admin.",
+      status: 400,
+    };
+  }
+
   const job = await defaultPrisma.generationJob.create({
     data: {
       status: GenerationJobStatus.pending,
@@ -46,41 +63,28 @@ export async function triggerGeneration(
   });
 
   try {
-    const prompt = await buildPrompt(job.id, {}, input.triggeredBy);
+    await createPipelineSteps(job.id, topics, {
+      spawnedBy: input.triggeredBy,
+    });
 
-    const spawnResult = spawnAgent(prompt, job.id);
-    if (!spawnResult.ok) {
-      await defaultPrisma.generationJob.update({
-        where: { id: job.id },
-        data: {
-          status: GenerationJobStatus.failed,
-          error: spawnResult.error,
-        },
-      });
+    const started = await startFirstPendingStep(job.id, {
+      spawnedBy: input.triggeredBy,
+    });
 
+    if (!started.ok) {
+      await failJobWithError(job.id, started.error);
       return {
         ok: false,
-        error: spawnResult.error,
+        error: started.error,
         status: 503,
         jobId: job.id,
       };
     }
 
-    await defaultPrisma.generationJob.update({
-      where: { id: job.id },
-      data: { status: GenerationJobStatus.running },
-    });
-
-    return { ok: true, jobId: job.id, pid: spawnResult.pid };
+    return { ok: true, jobId: job.id, pid: started.pid };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to trigger generation.";
-    await defaultPrisma.generationJob.update({
-      where: { id: job.id },
-      data: {
-        status: GenerationJobStatus.failed,
-        error: message,
-      },
-    });
+    await failJobWithError(job.id, message);
 
     return {
       ok: false,

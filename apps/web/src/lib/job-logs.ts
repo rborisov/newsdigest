@@ -1,5 +1,5 @@
 import path from "node:path";
-import { existsSync, mkdirSync, readFileSync, createWriteStream } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, createWriteStream } from "node:fs";
 
 const DEFAULT_HOST_LOG_DIR = "/opt/newsdigest/data/logs";
 
@@ -26,8 +26,12 @@ export function resolveJobLogDir(): string {
   return path.join(process.cwd(), "data", "logs");
 }
 
-export function jobLogPath(jobId: string): string {
-  return path.join(resolveJobLogDir(), `${jobId}.log`);
+export function jobLogPath(jobId: string, stepId?: string): string {
+  const dir = resolveJobLogDir();
+  if (stepId) {
+    return path.join(dir, `${jobId}-step-${stepId}.log`);
+  }
+  return path.join(dir, `${jobId}.log`);
 }
 
 export function ensureJobLogDir(): string {
@@ -36,9 +40,22 @@ export function ensureJobLogDir(): string {
   return dir;
 }
 
-/** Last `maxLines` of a job log (empty string if missing). */
-export function readJobLogTail(jobId: string, maxLines = 80): string {
-  const file = jobLogPath(jobId);
+export function appendJobLogLine(jobId: string, message: string, stepId?: string): void {
+  try {
+    ensureJobLogDir();
+    const line = `[${new Date().toISOString()}] ${message}\n`;
+    appendFileSync(jobLogPath(jobId, stepId), line, "utf8");
+    if (stepId) {
+      appendFileSync(jobLogPath(jobId), line, "utf8");
+    }
+  } catch {
+    // Logging must never break generation.
+  }
+}
+
+/** Last `maxLines` of a job (or step) log (empty string if missing). */
+export function readJobLogTail(jobId: string, maxLines = 80, stepId?: string): string {
+  const file = jobLogPath(jobId, stepId);
   if (!existsSync(file)) {
     return "";
   }
@@ -52,8 +69,8 @@ export function readJobLogTail(jobId: string, maxLines = 80): string {
   }
 }
 
-export function openJobLogWriteStream(jobId: string) {
+export function openJobLogWriteStream(jobId: string, stepId?: string) {
   ensureJobLogDir();
-  const file = jobLogPath(jobId);
+  const file = jobLogPath(jobId, stepId);
   return createWriteStream(file, { flags: "a" });
 }

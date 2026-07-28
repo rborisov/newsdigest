@@ -1,4 +1,4 @@
-import { GenerationJobStatus, PrismaClient } from "@prisma/client";
+import { GenerationJobStatus, GenerationStepStatus, PrismaClient } from "@prisma/client";
 
 import { prisma as defaultPrisma } from "./db";
 
@@ -19,6 +19,8 @@ export function isStaleRunningJob(
 /**
  * Marks long-running jobs as failed so a detached Cursor CLI spawn that never
  * reconciles cannot block the portal forever. Call before starting new work.
+ * Also fails open pipeline steps. Touches of job.updatedAt on each step start
+ * reset the stale clock for multi-step digests.
  */
 export async function reconcileStaleRunningJobs(
   db: PrismaClient = defaultPrisma,
@@ -28,16 +30,39 @@ export async function reconcileStaleRunningJobs(
   const maxAgeMs = options?.maxAgeMs ?? STALE_RUNNING_JOB_MAX_AGE_MS;
   const cutoff = new Date(now.getTime() - maxAgeMs);
 
-  const result = await db.generationJob.updateMany({
+  const staleJobs = await db.generationJob.findMany({
     where: {
       status: GenerationJobStatus.running,
       updatedAt: { lte: cutoff },
     },
-    data: {
-      status: GenerationJobStatus.failed,
-      error: STALE_JOB_ERROR,
-    },
+    select: { id: true },
   });
 
-  return result.count;
+  if (staleJobs.length === 0) {
+    return 0;
+  }
+
+  const ids = staleJobs.map((job) => job.id);
+
+  await db.$transaction([
+    db.generationStep.updateMany({
+      where: {
+        jobId: { in: ids },
+        status: { in: [GenerationStepStatus.pending, GenerationStepStatus.running] },
+      },
+      data: {
+        status: GenerationStepStatus.failed,
+        error: STALE_JOB_ERROR,
+      },
+    }),
+    db.generationJob.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        status: GenerationJobStatus.failed,
+        error: STALE_JOB_ERROR,
+      },
+    }),
+  ]);
+
+  return staleJobs.length;
 }

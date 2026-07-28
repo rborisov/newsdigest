@@ -55,6 +55,18 @@ export default async function AdminPage() {
         publishedPage: {
           select: { title: true, telegraphUrl: true },
         },
+        steps: {
+          orderBy: { sortOrder: "asc" },
+          select: {
+            id: true,
+            kind: true,
+            status: true,
+            sortOrder: true,
+            topicName: true,
+            error: true,
+            updatedAt: true,
+          },
+        },
       },
     }),
   ]);
@@ -89,6 +101,12 @@ export default async function AdminPage() {
             idleSec: Math.max(0, Math.floor((now - updatedMs) / 1000)),
             logTail: "",
             hasLog: false,
+            steps: job.steps.map((step) => ({
+              ...step,
+              updatedAt: step.updatedAt.toISOString(),
+              logTail: "",
+            })),
+            activeStepLog: "",
           };
         }),
       }}

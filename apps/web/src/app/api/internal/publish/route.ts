@@ -7,6 +7,7 @@ import {
   type StoryFingerprint,
 } from "@/lib/dedup";
 import { prisma } from "@/lib/db";
+import { markMergeStepCompleted, markMergeStepFailed } from "@/lib/generation-pipeline";
 import {
   buildExistingPublishResponse,
   getPublishSoftFailReason,
@@ -112,6 +113,8 @@ export async function POST(request: Request) {
         },
       });
 
+      await markMergeStepCompleted(jobId);
+
       return NextResponse.json({
         ok: true,
         jobId,
@@ -131,6 +134,7 @@ export async function POST(request: Request) {
           error: message,
         },
       });
+      await markMergeStepFailed(jobId, message);
 
       return NextResponse.json({ error: message, jobId }, { status: 502 });
     }
@@ -158,6 +162,7 @@ export async function POST(request: Request) {
         error: message,
       },
     });
+    await markMergeStepFailed(jobId, message);
 
     return NextResponse.json({ error: message, jobId, softFail: true }, { status: 409 });
   }
@@ -208,6 +213,7 @@ export async function POST(request: Request) {
         error: null,
       },
     });
+    await markMergeStepCompleted(jobId);
 
     return NextResponse.json({
       ok: true,
@@ -227,6 +233,7 @@ export async function POST(request: Request) {
         error: message,
       },
     });
+    await markMergeStepFailed(jobId, message);
 
     return NextResponse.json({ error: message, jobId }, { status: 502 });
   }

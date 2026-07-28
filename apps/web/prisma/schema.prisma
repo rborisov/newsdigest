@@ -20,6 +20,18 @@ enum TriggerType {
   agent
 }
 
+enum GenerationStepKind {
+  topic_draft
+  merge_publish
+}
+
+enum GenerationStepStatus {
+  pending
+  running
+  completed
+  failed
+}
+
 model Topic {
   id        String   @id @default(cuid())
   name      String
@@ -84,8 +96,29 @@ model GenerationJob {
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
 
-  schedule     Schedule?      @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  schedule      Schedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   publishedPage PublishedPage?
+  steps         GenerationStep[]
+}
+
+model GenerationStep {
+  id               String               @id @default(cuid())
+  jobId            String
+  kind             GenerationStepKind
+  status           GenerationStepStatus @default(pending)
+  sortOrder        Int
+  topicId          String?
+  topicName        String?
+  draftHtml        String?
+  draftStoriesJson String?
+  error            String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  job GenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, sortOrder])
+  @@index([jobId, status])
 }
 
 model PublishedPage {

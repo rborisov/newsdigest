@@ -26,6 +26,18 @@ export async function GET() {
           telegraphUrl: true,
         },
       },
+      steps: {
+        orderBy: { sortOrder: "asc" },
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          sortOrder: true,
+          topicName: true,
+          error: true,
+          updatedAt: true,
+        },
+      },
     },
   });
 
@@ -36,6 +48,8 @@ export async function GET() {
     const elapsedSec = Math.max(0, Math.floor((now - createdMs) / 1000));
     const idleSec = Math.max(0, Math.floor((now - updatedMs) / 1000));
     const logTail = readJobLogTail(job.id, 50);
+    const runningStep = job.steps.find((step) => step.status === "running");
+    const activeStepLog = runningStep ? readJobLogTail(job.id, 40, runningStep.id) : "";
 
     return {
       id: job.id,
@@ -49,6 +63,17 @@ export async function GET() {
       idleSec,
       logTail,
       hasLog: logTail.length > 0,
+      steps: job.steps.map((step) => ({
+        id: step.id,
+        kind: step.kind,
+        status: step.status,
+        sortOrder: step.sortOrder,
+        topicName: step.topicName,
+        error: step.error,
+        updatedAt: step.updatedAt.toISOString(),
+        logTail: readJobLogTail(job.id, 30, step.id),
+      })),
+      activeStepLog,
     };
   });
 

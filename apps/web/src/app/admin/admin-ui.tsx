@@ -37,6 +37,17 @@ type TelegraphMetaRow = {
   authorUrl: string;
 };
 
+export type GenerationStepRow = {
+  id: string;
+  kind: string;
+  status: string;
+  sortOrder: number;
+  topicName: string | null;
+  error: string | null;
+  updatedAt: string;
+  logTail?: string;
+};
+
 export type GenerationJobRow = {
   id: string;
   status: string;
@@ -49,6 +60,8 @@ export type GenerationJobRow = {
   idleSec?: number;
   logTail?: string;
   hasLog?: boolean;
+  steps?: GenerationStepRow[];
+  activeStepLog?: string;
 };
 
 export type AdminInitialData = {
@@ -129,12 +142,20 @@ function shortJobId(id: string): string {
   return id.length > 12 ? `${id.slice(0, 8)}…` : id;
 }
 
+function stepLabel(step: GenerationStepRow): string {
+  if (step.kind === "merge_publish") {
+    return "merge → publish";
+  }
+  return step.topicName ? `draft: ${step.topicName}` : "topic draft";
+}
+
 function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
   const [jobs, setJobs] = useState(initialJobs);
   const [error, setError] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [autoOpened, setAutoOpened] = useState(false);
+  const [logStepId, setLogStepId] = useState<string | "parent" | null>(null);
 
   const loadJobs = useCallback(async () => {
     setRefreshing(true);
@@ -169,6 +190,8 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
     const active = jobs.find((job) => job.status === "pending" || job.status === "running");
     if (active) {
       setExpandedId(active.id);
+      const running = active.steps?.find((step) => step.status === "running");
+      setLogStepId(running?.id ?? "parent");
       setAutoOpened(true);
     }
   }, [jobs, autoOpened]);
@@ -182,9 +205,10 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
         </button>
       </div>
       <p style={messageStyle}>
-        Auto-refreshes every 5s while a job is pending/running, otherwise every 30s. Expand a job to see
-        the agent log tail (stdout/stderr + 15s heartbeats). On the server:{" "}
-        <code>tail -f /opt/newsdigest/data/logs/&lt;jobId&gt;.log</code>
+        Auto-refreshes every 5s while a job is pending/running, otherwise every 30s. Each Generate runs
+        one short agent per enabled topic (draft), then one merge/publish step. Expand a job for step
+        status and logs. Server:{" "}
+        <code>tail -f /opt/newsdigest/data/logs/&lt;jobId&gt;[-step-&lt;stepId&gt;].log</code>
       </p>
       <StatusMessage error={error} />
       <table style={tableStyle}>
@@ -208,11 +232,28 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
           ) : (
             jobs.map((job) => {
               const open = expandedId === job.id;
+              const steps = job.steps ?? [];
+              const doneCount = steps.filter((step) => step.status === "completed").length;
+              const selectedLogId = open ? (logStepId ?? "parent") : null;
+              const selectedStep =
+                selectedLogId && selectedLogId !== "parent"
+                  ? steps.find((step) => step.id === selectedLogId)
+                  : null;
+              const logText =
+                selectedLogId === "parent"
+                  ? job.logTail
+                  : selectedStep?.logTail || job.activeStepLog || "";
+
               return (
                 <Fragment key={job.id}>
                   <tr>
                     <td style={cellStyle}>
                       <code>{job.status}</code>
+                      {steps.length > 0 ? (
+                        <span style={{ color: "#666", marginLeft: "0.35rem", fontSize: "0.75rem" }}>
+                          {doneCount}/{steps.length} steps
+                        </span>
+                      ) : null}
                       {job.status === "running" || job.status === "pending" ? (
                         <span style={{ color: "#666", marginLeft: "0.35rem", fontSize: "0.75rem" }}>
                           (idle {formatElapsed(job.idleSec)})
@@ -224,7 +265,15 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
                         type="button"
                         style={{ ...buttonStyle, padding: "0.125rem 0.375rem" }}
                         title={job.id}
-                        onClick={() => setExpandedId(open ? null : job.id)}
+                        onClick={() => {
+                          if (open) {
+                            setExpandedId(null);
+                            return;
+                          }
+                          setExpandedId(job.id);
+                          const running = steps.find((step) => step.status === "running");
+                          setLogStepId(running?.id ?? "parent");
+                        }}
                       >
                         {open ? "▼" : "▶"} {shortJobId(job.id)}
                       </button>
@@ -249,6 +298,42 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
                   {open ? (
                     <tr>
                       <td colSpan={6} style={{ ...cellStyle, background: "#f7f7f7" }}>
+                        {steps.length > 0 ? (
+                          <div style={{ marginBottom: "0.75rem" }}>
+                            <div style={{ fontSize: "0.8rem", marginBottom: "0.35rem", color: "#444" }}>
+                              Steps
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.85rem" }}>
+                              {steps.map((step) => (
+                                <li key={step.id} style={{ marginBottom: "0.25rem" }}>
+                                  <button
+                                    type="button"
+                                    style={{
+                                      ...buttonStyle,
+                                      padding: "0.05rem 0.35rem",
+                                      marginRight: "0.35rem",
+                                      fontSize: "0.75rem",
+                                    }}
+                                    onClick={() => setLogStepId(step.id)}
+                                  >
+                                    log
+                                  </button>
+                                  <code>{step.status}</code> — {stepLabel(step)}
+                                  {step.error ? (
+                                    <span style={{ color: "#b00020" }}> — {step.error}</span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                            <button
+                              type="button"
+                              style={{ ...buttonStyle, marginTop: "0.5rem", fontSize: "0.75rem" }}
+                              onClick={() => setLogStepId("parent")}
+                            >
+                              Parent job log
+                            </button>
+                          </div>
+                        ) : null}
                         <pre
                           style={{
                             margin: 0,
@@ -259,10 +344,10 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
                             wordBreak: "break-word",
                           }}
                         >
-                          {job.logTail?.trim()
-                            ? job.logTail
+                          {logText?.trim()
+                            ? logText
                             : job.status === "running" || job.status === "pending"
-                              ? "(no log lines yet — if this job started before log capture, start a new Generate after updating the app. New jobs write heartbeats every 15s to data/logs/<jobId>.log even when Cursor is quiet.)"
+                              ? "(no log lines yet — new jobs write heartbeats every 15s even when Cursor is quiet.)"
                               : "(no agent log for this job)"}
                         </pre>
                       </td>

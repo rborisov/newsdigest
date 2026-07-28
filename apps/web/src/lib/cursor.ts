@@ -19,10 +19,14 @@ export function resolveAgentWorkspace(): string {
  * Run Cursor CLI under a bash wrapper that:
  * - uses --force + --sandbox disabled so headless runs can fetch news and call MCP
  *   (without --force, -p silently denies shell/fetch/MCP — "environment blocked")
- * - appends stdout/stderr to the job log
+ * - appends stdout/stderr to the job (or step) log
  * - writes a heartbeat every 15s while the agent is alive
  */
-export function spawnAgent(prompt: string, jobId: string): SpawnAgentResult {
+export function spawnAgent(
+  prompt: string,
+  jobId: string,
+  stepId?: string,
+): SpawnAgentResult {
   const apiKey = process.env.CURSOR_API_KEY?.trim();
   if (!apiKey) {
     return { ok: false, error: "CURSOR_API_KEY is not configured." };
@@ -33,30 +37,48 @@ export function spawnAgent(prompt: string, jobId: string): SpawnAgentResult {
 
   try {
     ensureJobLogDir();
-    const logPath = jobLogPath(jobId);
+    const logPath = jobLogPath(jobId, stepId);
+    const parentLogPath = jobLogPath(jobId);
     writeFileSync(
       logPath,
-      `[${new Date().toISOString()}] preparing agent for job ${jobId}\n` +
+      `[${new Date().toISOString()}] preparing agent for job ${jobId}` +
+        (stepId ? ` step ${stepId}` : "") +
+        `\n` +
         `[${new Date().toISOString()}] log file: ${logPath}\n` +
         `[${new Date().toISOString()}] cli: ${command}\n` +
         `[${new Date().toISOString()}] workspace: ${workspace}\n` +
         `[${new Date().toISOString()}] flags: -p --force --sandbox disabled --trust --approve-mcps\n`,
       { flag: "a" },
     );
+    if (stepId && logPath !== parentLogPath) {
+      writeFileSync(
+        parentLogPath,
+        `[${new Date().toISOString()}] step ${stepId} agent log → ${logPath}\n`,
+        { flag: "a" },
+      );
+    }
 
     const wrapper = `
 set +e
 LOG="\$ND_JOB_LOG"
+PARENT_LOG="\$ND_PARENT_LOG"
 AGENT_BIN="\$ND_AGENT_BIN"
 PROMPT="\$ND_AGENT_PROMPT"
 WORKSPACE="\$ND_AGENT_WORKSPACE"
 
 ts() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 
+log_both() {
+  echo "\$1" >>"\$LOG"
+  if [ -n "\$PARENT_LOG" ] && [ "\$PARENT_LOG" != "\$LOG" ]; then
+    echo "\$1" >>"\$PARENT_LOG"
+  fi
+}
+
 {
-  echo "[\$(ts)] wrapper start"
-  echo "[\$(ts)] launching agent (force + sandbox disabled for VPS digest automation)"
-} >>"\$LOG"
+  log_both "[\$(ts)] wrapper start"
+  log_both "[\$(ts)] launching agent (force + sandbox disabled for VPS digest automation)"
+}
 
 # --force: required in -p so MCP/shell/fetch are not silently "User rejected"
 # --sandbox disabled: default sandbox blocks 127.0.0.1 (portal MCP) and most news sites
@@ -68,16 +90,16 @@ else
   "\$AGENT_BIN" "\${AGENT_ARGS[@]}" "\$PROMPT" >>"\$LOG" 2>&1 &
 fi
 pid=\$!
-echo "[\$(ts)] agent pid=\$pid" >>"\$LOG"
+log_both "[\$(ts)] agent pid=\$pid"
 
 while kill -0 "\$pid" 2>/dev/null; do
-  echo "[\$(ts)] heartbeat: agent still running (pid=\$pid)" >>"\$LOG"
+  log_both "[\$(ts)] heartbeat: agent still running (pid=\$pid)"
   sleep 15
 done
 
 wait "\$pid"
 code=\$?
-echo "[\$(ts)] agent exited with code=\$code" >>"\$LOG"
+log_both "[\$(ts)] agent exited with code=\$code"
 exit "\$code"
 `.trim();
 
@@ -89,6 +111,7 @@ exit "\$code"
         CURSOR_API_KEY: apiKey,
         HOME: process.env.HOME || "/root",
         ND_JOB_LOG: logPath,
+        ND_PARENT_LOG: parentLogPath,
         ND_AGENT_BIN: command,
         ND_AGENT_PROMPT: prompt,
         ND_AGENT_WORKSPACE: workspace,

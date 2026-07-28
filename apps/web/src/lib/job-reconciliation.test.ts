@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import { GenerationJobStatus, GenerationStepStatus } from "@prisma/client";
 
 import {
+  AGENT_EXITED_WITHOUT_COMPLETION,
   isStaleRunningJob,
+  logShowsAgentExited,
   reconcileStaleRunningJobs,
   STALE_JOB_ERROR,
   STALE_RUNNING_JOB_MAX_AGE_MS,
@@ -32,6 +34,13 @@ describe("job-reconciliation", () => {
       const updatedAt = new Date(now.getTime() - 5 * 60_000);
       assert.equal(isStaleRunningJob(updatedAt, now, 10 * 60_000), false);
       assert.equal(isStaleRunningJob(updatedAt, now, 4 * 60_000), true);
+    });
+  });
+
+  describe("logShowsAgentExited", () => {
+    it("detects wrapper exit lines", () => {
+      assert.equal(logShowsAgentExited("[2026-07-28T12:50:07Z] agent exited with code=0"), true);
+      assert.equal(logShowsAgentExited("heartbeat: agent still running"), false);
     });
   });
 
@@ -82,6 +91,7 @@ describe("job-reconciliation", () => {
           error: STALE_JOB_ERROR,
         },
       });
+      assert.match(AGENT_EXITED_WITHOUT_COMPLETION, /Agent exited/);
     });
 
     it("returns 0 when no stale jobs", async () => {

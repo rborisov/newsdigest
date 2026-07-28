@@ -288,6 +288,24 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
                         </a>
                       ) : job.error ? (
                         <span style={{ color: "#b00020" }}>{job.error}</span>
+                      ) : job.status === "running" || job.status === "pending" ? (
+                        <button
+                          type="button"
+                          style={{ ...buttonStyle, fontSize: "0.75rem", color: "#b00020" }}
+                          onClick={async () => {
+                            const result = await adminFetch(`/api/admin/jobs/${job.id}/cancel`, {
+                              method: "POST",
+                            });
+                            if (!result.ok) {
+                              setError(result.error);
+                              return;
+                            }
+                            setError(undefined);
+                            await loadJobs();
+                          }}
+                        >
+                          Cancel / unlock Generate
+                        </button>
                       ) : job.hasLog ? (
                         <span style={{ color: "#666" }}>log available</span>
                       ) : (

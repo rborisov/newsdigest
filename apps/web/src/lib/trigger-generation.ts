@@ -6,7 +6,7 @@ import {
   failJobWithError,
   startFirstPendingStep,
 } from "./generation-pipeline";
-import { reconcileStaleRunningJobs } from "./job-reconciliation";
+import { reconcileAbandonedJobs } from "./job-reconciliation";
 
 export type TriggerGenerationInput = {
   triggerType: TriggerType;
@@ -21,7 +21,7 @@ export type TriggerGenerationResult =
 export async function triggerGeneration(
   input: TriggerGenerationInput,
 ): Promise<TriggerGenerationResult> {
-  await reconcileStaleRunningJobs(defaultPrisma);
+  await reconcileAbandonedJobs(defaultPrisma);
 
   const active = await defaultPrisma.generationJob.findFirst({
     where: {

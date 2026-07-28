@@ -21,6 +21,7 @@ export function resolveAgentWorkspace(): string {
  *   (without --force, -p silently denies shell/fetch/MCP — "environment blocked")
  * - appends stdout/stderr to the job (or step) log
  * - writes a heartbeat every 15s while the agent is alive
+ * - notifies the portal after exit so stuck "running" jobs unlock Generate
  */
 export function spawnAgent(
   prompt: string,
@@ -34,6 +35,11 @@ export function spawnAgent(
 
   const command = resolveCursorCliPath();
   const workspace = resolveAgentWorkspace();
+  const portalUrl = (process.env.PORTAL_URL?.trim() || "http://127.0.0.1:3000").replace(
+    /\/$/,
+    "",
+  );
+  const internalKey = process.env.INTERNAL_API_KEY?.trim() || "";
 
   try {
     ensureJobLogDir();
@@ -65,6 +71,10 @@ PARENT_LOG="\$ND_PARENT_LOG"
 AGENT_BIN="\$ND_AGENT_BIN"
 PROMPT="\$ND_AGENT_PROMPT"
 WORKSPACE="\$ND_AGENT_WORKSPACE"
+PORTAL="\$ND_PORTAL_URL"
+INTERNAL_KEY="\$ND_INTERNAL_API_KEY"
+JOB_ID="\$ND_JOB_ID"
+STEP_ID="\$ND_STEP_ID"
 
 ts() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 
@@ -100,6 +110,24 @@ done
 wait "\$pid"
 code=\$?
 log_both "[\$(ts)] agent exited with code=\$code"
+
+# Delay so a successful MCP save/publish can commit before we mark abandoned.
+sleep 8
+if [ -n "\$PORTAL" ] && [ -n "\$INTERNAL_KEY" ] && [ -n "\$JOB_ID" ]; then
+  payload="{\\"jobId\\":\\"\$JOB_ID\\",\\"exitCode\\":\$code"
+  if [ -n "\$STEP_ID" ]; then
+    payload="\$payload,\\"stepId\\":\\"\$STEP_ID\\""
+  fi
+  payload="\$payload}"
+  if command -v curl >/dev/null 2>&1; then
+    curl -sS -m 15 -X POST "\$PORTAL/api/internal/agent-exited" \\
+      -H "Content-Type: application/json" \\
+      -H "x-internal-key: \$INTERNAL_KEY" \\
+      -d "\$payload" >>"\$LOG" 2>&1 || true
+    log_both "[\$(ts)] notified portal agent-exited"
+  fi
+fi
+
 exit "\$code"
 `.trim();
 
@@ -115,6 +143,10 @@ exit "\$code"
         ND_AGENT_BIN: command,
         ND_AGENT_PROMPT: prompt,
         ND_AGENT_WORKSPACE: workspace,
+        ND_PORTAL_URL: portalUrl,
+        ND_INTERNAL_API_KEY: internalKey,
+        ND_JOB_ID: jobId,
+        ND_STEP_ID: stepId ?? "",
       },
     });
 

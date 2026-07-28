@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { readJobLogTail } from "@/lib/job-logs";
+import { reconcileAbandonedJobs } from "@/lib/job-reconciliation";
 import { requireAdminApi } from "@/lib/require-admin";
 
 export async function GET() {
@@ -9,6 +10,9 @@ export async function GET() {
   if (result.error) {
     return result.error;
   }
+
+  // Unlock Generate when agent already exited or job is stale (home page polls this).
+  await reconcileAbandonedJobs();
 
   const jobs = await prisma.generationJob.findMany({
     orderBy: { createdAt: "desc" },

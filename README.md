@@ -176,6 +176,8 @@ For local/host MCP, see `apps/mcp-server/.env.example`.
 
 The portal spawns the CLI when an admin clicks **Generate now** or when the worker triggers a schedule. The CLI must be available **where the portal process runs**, and MCP config must reference `apps/mcp-server` with the same `INTERNAL_API_KEY`.
 
+Headless spawn uses `-p --force --sandbox disabled --trust --approve-mcps` so fetch/shell/MCP are not silently rejected. `install.sh` also writes `/root/.cursor/cli-config.json` (allow Shell/WebFetch/Mcp) and `sandbox.json` (allow localhost for portal MCP). Without those, job logs show “environment blocked” and no `digestUrl`.
+
 | Mode | When to use | Setup |
 |------|-------------|--------|
 | **Host CLI + Docker portal (VPS)** | Recommended small-VPS path | Install `agent` on the host; `install.sh` mounts it into `web` and mounts `mcp.json` → `/home/nextjs/.cursor/mcp.json`. MCP code/deps live **inside** the web image (`/app/mcp-server`). |

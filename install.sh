@@ -291,6 +291,7 @@ INTERNAL_API_KEY=${INTERNAL_API_KEY}
 
 CURSOR_API_KEY=${CURSOR_API_KEY}
 CURSOR_CLI_PATH=/usr/local/bin/agent
+AGENT_WORKSPACE=${INSTALL_ROOT}
 
 TELEGRAPH_ACCESS_TOKEN=${TELEGRAPH_ACCESS_TOKEN}
 
@@ -364,6 +365,54 @@ EOF
   chmod 0644 "${MCP_JSON}"
   cp -f "${MCP_JSON}" "${MCP_HOME_JSON}"
   chmod 0644 "${MCP_HOME_JSON}"
+
+  write_cursor_cli_automation_config
+}
+
+# Headless digest jobs need --force-equivalent allowlists: without them, -p silently
+# rejects WebFetch/Shell/MCP ("environment blocked") and sandbox blocks 127.0.0.1.
+write_cursor_cli_automation_config() {
+  log "Writing Cursor CLI automation permissions (~/.cursor/cli-config.json)"
+  mkdir -p /root/.cursor
+
+  cat > /root/.cursor/cli-config.json <<'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Shell(*)",
+      "Read(**)",
+      "Write(/tmp/**)",
+      "Write(/opt/newsdigest/data/**)",
+      "WebFetch(*)",
+      "Mcp(*:*)"
+    ],
+    "deny": [
+      "Read(**/.env*)",
+      "Write(**/.env*)",
+      "Write(**/*.pem)",
+      "Write(**/*.key)"
+    ]
+  }
+}
+EOF
+  chmod 0644 /root/.cursor/cli-config.json
+
+  cat > /root/.cursor/sandbox.json <<'EOF'
+{
+  "networkPolicy": {
+    "default": "allow",
+    "allow": ["127.0.0.1", "localhost", "0.0.0.0/0"]
+  },
+  "additionalReadonlyPaths": ["/opt/newsdigest"]
+}
+EOF
+  chmod 0644 /root/.cursor/sandbox.json
+
+  # Best-effort: approve MCP server for CLI (non-fatal if agent not logged in yet)
+  if command -v agent >/dev/null 2>&1; then
+    agent mcp enable news-digest >/dev/null 2>&1 || true
+    agent sandbox disable >/dev/null 2>&1 || true
+  fi
 }
 
 write_systemd_units() {

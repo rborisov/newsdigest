@@ -1,66 +1,78 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import Link from "next/link";
 
-export default function Home() {
+import { GenerateButton } from "@/app/generate-button";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+
+function formatDate(date: Date): string {
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export default async function HomePage() {
+  const [meta, pages, session] = await Promise.all([
+    prisma.telegraphMeta.findUnique({ where: { id: "default" } }),
+    prisma.publishedPage.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        title: true,
+        telegraphUrl: true,
+        createdAt: true,
+      },
+    }),
+    auth(),
+  ]);
+
+  const isAdmin = session?.user?.isAdmin ?? false;
+  const currentIndexUrl = meta?.currentIndexUrl?.trim() ?? "";
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
+    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "48rem", margin: "0 auto" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem", marginBottom: "2rem" }}>
+        <h1>News Digest</h1>
+        {isAdmin ? (
+          <nav style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+            <Link href="/admin">Admin</Link>
+            <GenerateButton />
+          </nav>
+        ) : null}
+      </header>
+
+      <section style={{ marginBottom: "2rem" }}>
+        <h2 style={{ fontSize: "1.125rem", marginBottom: "0.5rem" }}>Current index</h2>
+        {currentIndexUrl ? (
+          <a href={currentIndexUrl} target="_blank" rel="noopener noreferrer">
+            {currentIndexUrl}
           </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+        ) : (
+          <p style={{ color: "#666" }}>No index published yet.</p>
+        )}
+      </section>
+
+      <section>
+        <h2 style={{ fontSize: "1.125rem", marginBottom: "0.75rem" }}>Recent digests</h2>
+        {pages.length === 0 ? (
+          <p style={{ color: "#666" }}>No digests yet.</p>
+        ) : (
+          <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {pages.map((page) => (
+              <li key={page.id}>
+                <a href={page.telegraphUrl} target="_blank" rel="noopener noreferrer">
+                  {page.title}
+                </a>
+                <span style={{ color: "#666", marginLeft: "0.5rem" }}>
+                  {formatDate(page.createdAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </main>
   );
 }

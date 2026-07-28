@@ -16,11 +16,12 @@ describe("digest-display", () => {
     assert.match(formatDigestClock(when), /\d/);
   });
 
-  it("shortens generic Telegra.ph titles", () => {
-    assert.match(formatDigestHeading("Daily Digest — 2026-07-28", when), /^Digest ·/);
-    assert.match(formatDigestHeading("News Digest — July 28, 2026", when), /^Digest ·/);
+  it("hides generic titles that only repeat the timestamp", () => {
+    assert.equal(formatDigestHeading("Daily Digest — 2026-07-28"), null);
+    assert.equal(formatDigestHeading("News Digest — July 28, 2026"), null);
+    assert.equal(formatDigestHeading("Digest · 02:06 PM"), null);
     assert.equal(
-      formatDigestHeading("Digest · 2026-07-28 13:45 UTC · Private 5G · NTN", when),
+      formatDigestHeading("Digest · 2026-07-28 13:45 UTC · Private 5G · NTN"),
       "Digest · 2026-07-28 13:45 UTC · Private 5G · NTN",
     );
   });

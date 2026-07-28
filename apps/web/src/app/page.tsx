@@ -92,6 +92,7 @@ export default async function HomePage() {
           <ul className="digest-list">
             {pages.map((page) => {
               const tags = digestContentTags(page.stories.map((story) => story.title));
+              const heading = formatDigestHeading(page.title);
               return (
                 <li key={page.id}>
                   <a
@@ -103,9 +104,7 @@ export default async function HomePage() {
                     <div className="digest-meta">
                       <span className="digest-time">{formatDigestWhen(page.createdAt)}</span>
                     </div>
-                    <div className="digest-title">
-                      {formatDigestHeading(page.title, page.createdAt)}
-                    </div>
+                    {heading ? <div className="digest-title">{heading}</div> : null}
                     {tags.length > 0 ? (
                       <div className="tag-row">
                         {tags.map((tag) => (

@@ -77,11 +77,20 @@ export default async function AdminPage() {
           authorUrl: telegraph.authorUrl,
         },
         cursorApiKeyConfigured: Boolean(process.env.CURSOR_API_KEY?.trim()),
-        jobs: jobs.map((job) => ({
-          ...job,
-          createdAt: job.createdAt.toISOString(),
-          updatedAt: job.updatedAt.toISOString(),
-        })),
+        jobs: jobs.map((job) => {
+          const now = Date.now();
+          const createdMs = job.createdAt.getTime();
+          const updatedMs = job.updatedAt.getTime();
+          return {
+            ...job,
+            createdAt: job.createdAt.toISOString(),
+            updatedAt: job.updatedAt.toISOString(),
+            elapsedSec: Math.max(0, Math.floor((now - createdMs) / 1000)),
+            idleSec: Math.max(0, Math.floor((now - updatedMs) / 1000)),
+            logTail: "",
+            hasLog: false,
+          };
+        }),
       }}
     />
   );

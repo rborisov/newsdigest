@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 type AllowedUserRow = {
   id: string;
@@ -45,6 +45,10 @@ export type GenerationJobRow = {
   createdAt: string;
   updatedAt: string;
   publishedPage: { title: string; telegraphUrl: string } | null;
+  elapsedSec?: number;
+  idleSec?: number;
+  logTail?: string;
+  hasLog?: boolean;
 };
 
 export type AdminInitialData = {
@@ -104,10 +108,33 @@ function formatJobTime(iso: string): string {
   }
 }
 
+function formatElapsed(totalSec: number | undefined): string {
+  if (totalSec == null || Number.isNaN(totalSec)) {
+    return "—";
+  }
+  const sec = Math.max(0, totalSec);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) {
+    return `${h}h ${m}m`;
+  }
+  if (m > 0) {
+    return `${m}m ${s}s`;
+  }
+  return `${s}s`;
+}
+
+function shortJobId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+}
+
 function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
   const [jobs, setJobs] = useState(initialJobs);
   const [error, setError] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [autoOpened, setAutoOpened] = useState(false);
 
   const loadJobs = useCallback(async () => {
     setRefreshing(true);
@@ -135,6 +162,17 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
     return () => window.clearInterval(timer);
   }, [jobs, loadJobs]);
 
+  useEffect(() => {
+    if (autoOpened) {
+      return;
+    }
+    const active = jobs.find((job) => job.status === "pending" || job.status === "running");
+    if (active) {
+      setExpandedId(active.id);
+      setAutoOpened(true);
+    }
+  }, [jobs, autoOpened]);
+
   return (
     <section style={sectionStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem" }}>
@@ -144,49 +182,92 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
         </button>
       </div>
       <p style={messageStyle}>
-        Auto-refreshes every 5s while a job is pending/running, otherwise every 30s. Agent console output is not
-        captured; status comes from the job record.
+        Auto-refreshes every 5s while a job is pending/running, otherwise every 30s. Agent stdout/stderr is written
+        under the data logs directory and tailed below for each job.
       </p>
       <StatusMessage error={error} />
       <table style={tableStyle}>
         <thead>
           <tr>
             <th style={cellStyle}>Status</th>
+            <th style={cellStyle}>Job</th>
             <th style={cellStyle}>Trigger</th>
+            <th style={cellStyle}>Elapsed</th>
             <th style={cellStyle}>Created</th>
-            <th style={cellStyle}>Updated</th>
             <th style={cellStyle}>Digest / error</th>
           </tr>
         </thead>
         <tbody>
           {jobs.length === 0 ? (
             <tr>
-              <td colSpan={5} style={cellStyle}>
+              <td colSpan={6} style={cellStyle}>
                 No generation jobs yet.
               </td>
             </tr>
           ) : (
-            jobs.map((job) => (
-              <tr key={job.id}>
-                <td style={cellStyle}>
-                  <code>{job.status}</code>
-                </td>
-                <td style={cellStyle}>{job.triggerType}</td>
-                <td style={cellStyle}>{formatJobTime(job.createdAt)}</td>
-                <td style={cellStyle}>{formatJobTime(job.updatedAt)}</td>
-                <td style={cellStyle}>
-                  {job.publishedPage ? (
-                    <a href={job.publishedPage.telegraphUrl} target="_blank" rel="noopener noreferrer">
-                      {job.publishedPage.title}
-                    </a>
-                  ) : job.error ? (
-                    <span style={{ color: "#b00020" }}>{job.error}</span>
-                  ) : (
-                    <span style={{ color: "#666" }}>—</span>
-                  )}
-                </td>
-              </tr>
-            ))
+            jobs.map((job) => {
+              const open = expandedId === job.id;
+              return (
+                <Fragment key={job.id}>
+                  <tr>
+                    <td style={cellStyle}>
+                      <code>{job.status}</code>
+                      {job.status === "running" || job.status === "pending" ? (
+                        <span style={{ color: "#666", marginLeft: "0.35rem", fontSize: "0.75rem" }}>
+                          (idle {formatElapsed(job.idleSec)})
+                        </span>
+                      ) : null}
+                    </td>
+                    <td style={cellStyle}>
+                      <button
+                        type="button"
+                        style={{ ...buttonStyle, padding: "0.125rem 0.375rem" }}
+                        title={job.id}
+                        onClick={() => setExpandedId(open ? null : job.id)}
+                      >
+                        {open ? "▼" : "▶"} {shortJobId(job.id)}
+                      </button>
+                    </td>
+                    <td style={cellStyle}>{job.triggerType}</td>
+                    <td style={cellStyle}>{formatElapsed(job.elapsedSec)}</td>
+                    <td style={cellStyle}>{formatJobTime(job.createdAt)}</td>
+                    <td style={cellStyle}>
+                      {job.publishedPage ? (
+                        <a href={job.publishedPage.telegraphUrl} target="_blank" rel="noopener noreferrer">
+                          {job.publishedPage.title}
+                        </a>
+                      ) : job.error ? (
+                        <span style={{ color: "#b00020" }}>{job.error}</span>
+                      ) : job.hasLog ? (
+                        <span style={{ color: "#666" }}>log available</span>
+                      ) : (
+                        <span style={{ color: "#666" }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                  {open ? (
+                    <tr>
+                      <td colSpan={6} style={{ ...cellStyle, background: "#f7f7f7" }}>
+                        <pre
+                          style={{
+                            margin: 0,
+                            maxHeight: "16rem",
+                            overflow: "auto",
+                            fontSize: "0.75rem",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          {job.logTail?.trim()
+                            ? job.logTail
+                            : "(no agent log yet — waiting for Cursor CLI output)"}
+                        </pre>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })
           )}
         </tbody>
       </table>

@@ -48,7 +48,7 @@ export async function triggerGeneration(
   try {
     const prompt = await buildPrompt(job.id, {}, input.triggeredBy);
 
-    const spawnResult = spawnAgent(prompt);
+    const spawnResult = spawnAgent(prompt, job.id);
     if (!spawnResult.ok) {
       await defaultPrisma.generationJob.update({
         where: { id: job.id },

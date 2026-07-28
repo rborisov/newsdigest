@@ -296,6 +296,7 @@ TELEGRAPH_ACCESS_TOKEN=${TELEGRAPH_ACCESS_TOKEN}
 
 # Absolute SQLite path (host)
 DATABASE_URL=file:${DATA_DIR}/digest.db
+JOB_LOG_DIR=${DATA_DIR}/logs
 
 # Worker → portal
 PORTAL_URL=http://127.0.0.1:3000

@@ -4,7 +4,7 @@ import { SignOutButton } from "@/app/sign-out-button";
 import { SiteHeader } from "@/app/site-header";
 import { auth } from "@/lib/auth";
 import {
-  digestContentTags,
+  digestListTags,
   formatDigestHeading,
   formatDigestWhen,
 } from "@/lib/digest-display";
@@ -87,7 +87,10 @@ export default async function HomePage() {
         ) : (
           <ul className="digest-list">
             {pages.map((page) => {
-              const tags = digestContentTags(page.stories.map((story) => story.title));
+              const tags = digestListTags({
+                title: page.title,
+                storyTitles: page.stories.map((story) => story.title),
+              });
               const heading = formatDigestHeading(page.title);
               return (
                 <li key={page.id}>

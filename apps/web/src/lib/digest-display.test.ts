@@ -3,10 +3,12 @@ import { describe, it } from "node:test";
 
 import {
   digestContentTags,
+  digestListTags,
   formatDigestClock,
   formatDigestHeading,
   formatDigestWhen,
   formatIndexLinkLabel,
+  topicsFromDigestTitle,
 } from "./digest-display";
 
 describe("digest-display", () => {
@@ -17,13 +19,20 @@ describe("digest-display", () => {
     assert.match(formatDigestClock(when), /\d/);
   });
 
-  it("hides generic titles that only repeat the timestamp", () => {
+  it("hides generic and agent Digest · UTC titles on the portal list", () => {
     assert.equal(formatDigestHeading("Daily Digest — 2026-07-28"), null);
     assert.equal(formatDigestHeading("News Digest — July 28, 2026"), null);
     assert.equal(formatDigestHeading("Digest · 02:06 PM"), null);
     assert.equal(
-      formatDigestHeading("Digest · 2026-07-28 13:45 UTC · Private 5G · NTN"),
-      "Digest · 2026-07-28 13:45 UTC · Private 5G · NTN",
+      formatDigestHeading("Digest · 2026-07-28 15:32 UTC · Opportunities · Выставки · Local NN"),
+      null,
+    );
+  });
+
+  it("parses topics from agent digest titles", () => {
+    assert.deepEqual(
+      topicsFromDigestTitle("Digest · 2026-07-28 15:32 UTC · Opportunities · Выставки · Local NN"),
+      ["Opportunities", "Выставки", "Local NN"],
     );
   });
 
@@ -40,8 +49,17 @@ describe("digest-display", () => {
     assert.match(tags[0] ?? "", /Amazon/);
   });
 
+  it("merges topic and story tags for the list", () => {
+    const tags = digestListTags({
+      title: "Digest · 2026-07-28 15:32 UTC · Opportunities · Выставки",
+      storyTitles: ["Source story one"],
+      limit: 5,
+    });
+    assert.deepEqual(tags.slice(0, 2), ["Opportunities", "Выставки"]);
+    assert.match(tags.join(" "), /Source/);
+  });
+
   it("builds index link labels with time and story tags", () => {
-    const when = new Date("2026-07-28T13:45:00.000Z");
     assert.equal(
       formatIndexLinkLabel({
         title: "Daily Digest — 2026-07-28",
@@ -55,7 +73,7 @@ describe("digest-display", () => {
         title: "Digest · 2026-07-28 13:45 UTC · Private 5G · NTN",
         createdAt: when,
       }),
-      "Digest · 2026-07-28 13:45 UTC · Private 5G · NTN",
+      "2026-07-28 13:45 UTC · Private 5G · NTN",
     );
   });
 });

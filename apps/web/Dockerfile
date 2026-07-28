@@ -26,6 +26,13 @@ ENV DATABASE_URL=file:./build.db
 RUN npx prisma generate --schema=apps/web/prisma/schema.prisma
 RUN npm run build --workspace=web
 
+# MCP server + deps baked into the web image (no host/bind-mount node_modules, no bookworm pull).
+FROM node:22-alpine AS mcp
+WORKDIR /app/mcp-server
+COPY apps/mcp-server/package.json ./
+RUN npm install --omit=dev
+COPY apps/mcp-server/src ./src
+
 FROM node:22-alpine AS runner
 WORKDIR /app
 
@@ -44,6 +51,7 @@ COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder /app/apps/web/prisma ./apps/web/prisma
+COPY --from=mcp /app/mcp-server /app/mcp-server
 COPY apps/web/docker-entrypoint.sh /app/docker-entrypoint.sh
 
 RUN chmod +x /app/docker-entrypoint.sh \

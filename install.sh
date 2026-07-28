@@ -323,12 +323,13 @@ write_mcp_json() {
   local key_json
   key_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${INTERNAL_API_KEY}")"
 
+  # MCP is baked into the web image at /app/mcp-server (see apps/web/Dockerfile).
   cat > "${MCP_JSON}" <<EOF
 {
   "mcpServers": {
     "news-digest": {
       "command": "tsx",
-      "args": ["/opt/newsdigest/apps/mcp-server/src/index.ts"],
+      "args": ["/app/mcp-server/src/index.ts"],
       "env": {
         "PORTAL_URL": "http://127.0.0.1:3000",
         "INTERNAL_API_KEY": ${key_json}
@@ -343,6 +344,7 @@ EOF
 write_compose_override() {
   log "Writing ${COMPOSE_OVERRIDE}"
   # ${CURSOR_API_KEY} is left for Compose to interpolate from .env (quoted heredoc).
+  # MCP lives inside the web image — do not bind-mount apps/mcp-server.
   cat > "${COMPOSE_OVERRIDE}" <<'EOF'
 # managed-by: newsdigest-install
 services:
@@ -355,19 +357,7 @@ services:
       - /usr/local/bin/agent:/usr/local/bin/agent:ro
       - /root/.local/share/cursor-agent:/home/nextjs/.local/share/cursor-agent:ro
       - /opt/newsdigest/mcp.json:/home/nextjs/.cursor/mcp.json:ro
-      - ./apps/mcp-server:/opt/newsdigest/apps/mcp-server:ro
 EOF
-}
-
-install_mcp_deps() {
-  # Bind-mounted apps/mcp-server is gitignored for node_modules; install inside a
-  # throwaway Node image so the host does not need Node. mcp-server has no workspace deps.
-  log "Installing MCP server dependencies"
-  docker run --rm \
-    -v "${INSTALL_ROOT}/apps/mcp-server:/app" \
-    -w /app \
-    node:22-bookworm \
-    bash -lc 'if [[ -f package-lock.json ]]; then npm ci --omit=dev; else npm install --omit=dev; fi'
 }
 
 compose_up() {
@@ -463,7 +453,6 @@ main() {
   install_cursor_cli
   write_mcp_json
   write_compose_override
-  install_mcp_deps
   compose_up
 
   # Rewrite nginx / run certbot when site missing or domain changed.

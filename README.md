@@ -146,9 +146,9 @@ Configure on the machine where the **Cursor CLI runs** (typically the host durin
 }
 ```
 
-For Docker on a VPS, point `PORTAL_URL` at the internal service URL (`http://web:3000`) when MCP runs inside the Compose network, or at the public HTTPS URL when MCP runs on the host.
+On a VPS Docker install, the **web image bakes in** `apps/mcp-server` at `/app/mcp-server` (deps included). `install.sh` writes `mcp.json` pointing at that path inside the container — no host Node and no extra `node:bookworm` pull.
 
-See `apps/mcp-server/.env.example` for variable names.
+For local/host MCP, see `apps/mcp-server/.env.example`.
 
 ## Cursor CLI placement (TN-0005)
 
@@ -156,13 +156,13 @@ The portal spawns the CLI when an admin clicks **Generate now** or when the work
 
 | Mode | When to use | Setup |
 |------|-------------|--------|
-| **Host CLI** | Local dev; VPS with CLI installed on the host | Install `agent` on the host. Keep `~/.cursor/mcp.json` on the host pointing at `apps/mcp-server`. If the portal runs in Docker but the CLI stays on the host, mount the binary and MCP repo paths into the `web` container and set `CURSOR_CLI_PATH` (see commented example in `docker-compose.yml`). |
-| **In-container CLI** | Fully containerized VPS | Install Cursor CLI in the `web` image (or mount it), copy/mount `apps/mcp-server`, and provide MCP config inside the container (e.g. mount `~/.cursor/mcp.json` or set `CURSOR_API_KEY` + MCP paths via env). Generation and MCP stdio stay in the same container filesystem. |
+| **Host CLI + Docker portal (VPS)** | Recommended small-VPS path | Install `agent` on the host; `install.sh` mounts it into `web` and mounts `mcp.json` → `/home/nextjs/.cursor/mcp.json`. MCP code/deps live **inside** the web image (`/app/mcp-server`). |
+| **Local host CLI** | Dev without Docker for generation | Point MCP at the repo `apps/mcp-server` checkout with local `npm install`. |
 
-Requirements in both modes:
+Requirements:
 
 - `CURSOR_API_KEY` in `.env`
-- MCP entrypoint resolves to `apps/mcp-server/src/index.ts`
+- MCP entrypoint: `/app/mcp-server/src/index.ts` in Docker, or local repo path for host-only
 - `INTERNAL_API_KEY` matches across portal, worker, and MCP
 
 ## Smoke test (zero → running portal)

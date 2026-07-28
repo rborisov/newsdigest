@@ -1,6 +1,7 @@
 # managed-by: newsdigest-install
 # Copy to docker-compose.override.yml on the VPS (install.sh writes this automatically).
 # ${CURSOR_API_KEY} is interpolated by Compose from .env — do not hard-code secrets here.
+# MCP server is baked into the web image at /app/mcp-server (no bind-mount, no bookworm pull).
 services:
   web:
     environment:
@@ -11,4 +12,3 @@ services:
       - /usr/local/bin/agent:/usr/local/bin/agent:ro
       - /root/.local/share/cursor-agent:/home/nextjs/.local/share/cursor-agent:ro
       - /opt/newsdigest/mcp.json:/home/nextjs/.cursor/mcp.json:ro
-      - ./apps/mcp-server:/opt/newsdigest/apps/mcp-server:ro

@@ -21,6 +21,9 @@ services:
       - .env
     environment:
       PORTAL_URL: http://web:3000
+      DATABASE_URL: file:/app/data/digest.db
+    volumes:
+      - digest-data:/app/data
     depends_on:
       - web
     restart: unless-stopped

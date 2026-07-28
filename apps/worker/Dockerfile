@@ -5,6 +5,7 @@ WORKDIR /app
 
 COPY package.json ./
 COPY apps/worker/package.json ./apps/worker/
+COPY apps/web/prisma ./apps/web/prisma
 RUN npm install --workspace=worker
 
 COPY apps/worker ./apps/worker

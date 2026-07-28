@@ -40,7 +40,11 @@ export default async function HomePage() {
             <Link href="/admin">Admin</Link>
             <GenerateButton />
           </nav>
-        ) : null}
+        ) : (
+          <nav>
+            <Link href="/auth/signin">Sign in</Link>
+          </nav>
+        )}
       </header>
 
       <section style={{ marginBottom: "2rem" }}>

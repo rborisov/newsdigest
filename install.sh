@@ -355,24 +355,26 @@ EOF
 
 write_systemd_units() {
   log "Writing systemd units"
+  local standalone_dir="${INSTALL_ROOT}/apps/web/.next/standalone"
   cat > "${WEB_UNIT}" <<EOF
 # managed-by: newsdigest-install
 [Unit]
-Description=News Digest portal (Next.js)
+Description=News Digest portal (Next.js standalone)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=${INSTALL_ROOT}
+WorkingDirectory=${standalone_dir}
 EnvironmentFile=${INSTALL_ROOT}/.env
 Environment=NODE_ENV=production
 Environment=HOME=/root
+Environment=HOSTNAME=0.0.0.0
+Environment=PORT=3000
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/npm run start --workspace=web
+ExecStart=/usr/bin/node apps/web/server.js
 Restart=on-failure
 RestartSec=5
-# Cap heap so 1 GB hosts leave room for OS + worker
 Environment=NODE_OPTIONS=--max-old-space-size=512
 
 [Install]
@@ -405,6 +407,19 @@ EOF
   systemctl daemon-reload
 }
 
+prepare_standalone() {
+  local web="${INSTALL_ROOT}/apps/web"
+  local standalone="${web}/.next/standalone"
+  [[ -f "${standalone}/apps/web/server.js" ]] || die "standalone server missing at ${standalone}/apps/web/server.js — build failed?"
+
+  log "Preparing Next.js standalone static assets"
+  mkdir -p "${standalone}/apps/web/.next"
+  rm -rf "${standalone}/apps/web/.next/static"
+  cp -a "${web}/.next/static" "${standalone}/apps/web/.next/static"
+  rm -rf "${standalone}/apps/web/public"
+  cp -a "${web}/public" "${standalone}/apps/web/public"
+}
+
 install_app() {
   log "Installing npm dependencies (can take several minutes on 1 GB + swap)…"
   cd "${INSTALL_ROOT}" || die "Cannot cd to ${INSTALL_ROOT}"
@@ -420,6 +435,7 @@ install_app() {
 
   log "Building Next.js (slow on 1 GB — leave it running)…"
   npm run build --workspace=web
+  prepare_standalone
 
   log "Applying database schema + seed…"
   npm run db:push --workspace=web

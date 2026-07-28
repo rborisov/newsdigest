@@ -1,0 +1,64 @@
+import { NextResponse } from "next/server";
+
+import { prisma } from "@/lib/db";
+import { requireAdminApi } from "@/lib/require-admin";
+
+const PROMPT_ID = "default";
+
+export async function GET() {
+  const result = await requireAdminApi();
+  if (result.error) {
+    return result.error;
+  }
+
+  const prompt = await prisma.promptConfig.findUnique({ where: { id: PROMPT_ID } });
+  if (!prompt) {
+    return NextResponse.json({ error: "Prompt config not found." }, { status: 404 });
+  }
+
+  return NextResponse.json({ prompt });
+}
+
+export async function PATCH(request: Request) {
+  const result = await requireAdminApi();
+  if (result.error) {
+    return result.error;
+  }
+
+  const body = (await request.json()) as {
+    template?: string;
+    periodHours?: number;
+  };
+
+  const existing = await prisma.promptConfig.findUnique({ where: { id: PROMPT_ID } });
+  if (!existing) {
+    return NextResponse.json({ error: "Prompt config not found." }, { status: 404 });
+  }
+
+  const data: { template?: string; periodHours?: number } = {};
+
+  if (body.template !== undefined) {
+    const template = body.template.trim();
+    if (!template) {
+      return NextResponse.json({ error: "Template is required." }, { status: 400 });
+    }
+    data.template = template;
+  }
+
+  if (body.periodHours !== undefined) {
+    if (!Number.isInteger(body.periodHours) || body.periodHours < 1 || body.periodHours > 168) {
+      return NextResponse.json(
+        { error: "Period hours must be an integer between 1 and 168." },
+        { status: 400 },
+      );
+    }
+    data.periodHours = body.periodHours;
+  }
+
+  const prompt = await prisma.promptConfig.update({
+    where: { id: PROMPT_ID },
+    data,
+  });
+
+  return NextResponse.json({ prompt });
+}

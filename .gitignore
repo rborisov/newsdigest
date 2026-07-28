@@ -9,3 +9,4 @@ dist/
 apps/web/prisma/*.db
 apps/web/prisma/*.db-journal
 data/
+npm-debug.log*

@@ -1,0 +1,29 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: file:/app/data/digest.db
+    volumes:
+      - digest-data:/app/data
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    env_file:
+      - .env
+    environment:
+      PORTAL_URL: http://web:3000
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  digest-data:

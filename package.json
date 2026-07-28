@@ -1,0 +1,13 @@
+{
+  "name": "newsdigest",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=web",
+    "dev:worker": "npm run dev --workspace=worker",
+    "build": "npm run build --workspace=web"
+  }
+}

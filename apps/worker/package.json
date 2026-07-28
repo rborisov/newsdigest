@@ -1,0 +1,11 @@
+{
+  "name": "worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "build": "echo \"worker build not yet implemented\"",
+    "start": "node src/index.js"
+  }
+}

@@ -45,12 +45,13 @@ function createServer(): McpServer {
         stories: z
           .array(
             z.object({
-              url: z.string().optional(),
-              title: z.string().optional(),
+              title: z.string().min(1),
+              canonicalUrl: z.string().nullable().optional(),
+              titleKey: z.string().optional(),
             }),
           )
           .optional()
-          .describe("Optional story list for deduplication metadata"),
+          .describe("Optional story fingerprints for deduplication metadata"),
       },
     },
     async ({ jobId, title, htmlContent, stories }) => {

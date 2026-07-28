@@ -7,7 +7,7 @@ type JobSummary = {
   status: string;
 };
 
-export function GenerateButton() {
+export function GenerateButton({ onTriggered }: { onTriggered?: () => void } = {}) {
   const [status, setStatus] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [activeJob, setActiveJob] = useState<JobSummary | null>(null);
@@ -72,6 +72,7 @@ export function GenerateButton() {
       } else {
         await refreshActive();
       }
+      onTriggered?.();
     } catch {
       setStatus("Generation failed.");
     } finally {

@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { GenerateButton } from "@/app/generate-button";
 import { SignOutButton } from "@/app/sign-out-button";
 import { SiteHeader } from "@/app/site-header";
 import { auth } from "@/lib/auth";
@@ -44,10 +43,12 @@ export default async function HomePage() {
             <>
               {isAdmin ? (
                 <>
+                  <Link href="/admin#jobs" className="nav-link">
+                    Generate
+                  </Link>
                   <Link href="/admin" className="nav-link">
                     Admin
                   </Link>
-                  <GenerateButton />
                 </>
               ) : null}
               <SignOutButton />

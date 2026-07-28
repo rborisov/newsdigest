@@ -6,6 +6,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 
 import { SiteHeader } from "@/app/site-header";
 import { SignOutButton } from "@/app/sign-out-button";
+import { GenerateButton } from "@/app/generate-button";
 
 type AllowedUserRow = {
   id: string;
@@ -201,11 +202,14 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
 
   return (
     <section style={sectionStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem" }}>
-        <h2 style={headingStyle}>Generation jobs</h2>
-        <button type="button" style={buttonStyle} onClick={() => void loadJobs()} disabled={refreshing}>
-          {refreshing ? "Refreshing…" : "Refresh"}
-        </button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+        <h2 style={{ ...headingStyle, marginBottom: 0 }}>Generation jobs</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", flexWrap: "wrap" }}>
+          <GenerateButton onTriggered={() => void loadJobs()} />
+          <button type="button" className="btn" onClick={() => void loadJobs()} disabled={refreshing}>
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
       <p style={messageStyle}>
         Auto-refreshes every 5s while a job is pending/running, otherwise every 30s. Each Generate runs

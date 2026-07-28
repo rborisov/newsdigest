@@ -1,28 +1,31 @@
 import Link from "next/link";
 
 import { GenerateButton } from "@/app/generate-button";
+import { SiteHeader } from "@/app/site-header";
 import { auth } from "@/lib/auth";
+import {
+  digestContentTags,
+  formatDigestHeading,
+  formatDigestWhen,
+} from "@/lib/digest-display";
 import { prisma } from "@/lib/db";
-
-function formatDate(date: Date): string {
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export default async function HomePage() {
   const [meta, pages, session] = await Promise.all([
     prisma.telegraphMeta.findUnique({ where: { id: "default" } }),
     prisma.publishedPage.findMany({
       orderBy: { createdAt: "desc" },
-      take: 5,
+      take: 8,
       select: {
         id: true,
         title: true,
         telegraphUrl: true,
         createdAt: true,
+        stories: {
+          take: 6,
+          orderBy: { firstSeenAt: "asc" },
+          select: { title: true },
+        },
       },
     }),
     auth(),
@@ -32,48 +35,83 @@ export default async function HomePage() {
   const currentIndexUrl = meta?.currentIndexUrl?.trim() ?? "";
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "48rem", margin: "0 auto" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem", marginBottom: "2rem" }}>
-        <h1>News Digest</h1>
-        {isAdmin ? (
-          <nav style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-            <Link href="/admin">Admin</Link>
-            <GenerateButton />
-          </nav>
-        ) : (
-          <nav>
-            <Link href="/auth/signin">Sign in</Link>
-          </nav>
-        )}
-      </header>
+    <main className="shell">
+      <SiteHeader
+        actions={
+          isAdmin ? (
+            <>
+              <Link href="/admin" className="nav-link">
+                Admin
+              </Link>
+              <GenerateButton />
+            </>
+          ) : (
+            <Link href="/auth/signin" className="nav-link">
+              Sign in
+            </Link>
+          )
+        }
+      />
 
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={{ fontSize: "1.125rem", marginBottom: "0.5rem" }}>Current index</h2>
+      <section className="hero">
+        <h1>Signal, distilled.</h1>
+        <p>
+          Short digests on mobile networking, embedded, and Android — researched
+          automatically, published to Telegra.ph.
+        </p>
+      </section>
+
+      <section className="panel">
+        <h2>Current index</h2>
         {currentIndexUrl ? (
-          <a href={currentIndexUrl} target="_blank" rel="noopener noreferrer">
-            {currentIndexUrl}
+          <a
+            className="index-link"
+            href={currentIndexUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open Telegra.ph index →
           </a>
         ) : (
-          <p style={{ color: "#666" }}>No index published yet.</p>
+          <p className="muted">No index published yet.</p>
         )}
       </section>
 
-      <section>
-        <h2 style={{ fontSize: "1.125rem", marginBottom: "0.75rem" }}>Recent digests</h2>
+      <section className="panel" style={{ animationDelay: "0.08s" }}>
+        <h2>Recent digests</h2>
         {pages.length === 0 ? (
-          <p style={{ color: "#666" }}>No digests yet.</p>
+          <p className="muted">No digests yet.</p>
         ) : (
-          <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {pages.map((page) => (
-              <li key={page.id}>
-                <a href={page.telegraphUrl} target="_blank" rel="noopener noreferrer">
-                  {page.title}
-                </a>
-                <span style={{ color: "#666", marginLeft: "0.5rem" }}>
-                  {formatDate(page.createdAt)}
-                </span>
-              </li>
-            ))}
+          <ul className="digest-list">
+            {pages.map((page) => {
+              const tags = digestContentTags(page.stories.map((story) => story.title));
+              return (
+                <li key={page.id}>
+                  <a
+                    className="digest-item"
+                    href={page.telegraphUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <div className="digest-meta">
+                      <span className="digest-time">{formatDigestWhen(page.createdAt)}</span>
+                    </div>
+                    <div className="digest-title">
+                      {formatDigestHeading(page.title, page.createdAt)}
+                    </div>
+                    {tags.length > 0 ? (
+                      <div className="tag-row">
+                        {tags.map((tag) => (
+                          <span key={tag} className="tag">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </a>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useState } from "react";
 
+import { SiteHeader } from "@/app/site-header";
+
 type AllowedUserRow = {
   id: string;
   email: string;
@@ -1005,14 +1007,22 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
   });
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "56rem", margin: "0 auto" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "1rem", marginBottom: "1.25rem" }}>
-        <div>
-          <h1>Admin</h1>
-          <p style={{ color: "#666", marginTop: "0.25rem" }}>Signed in as {data.signedInEmail}</p>
-        </div>
-        <Link href="/">Back to home</Link>
-      </header>
+    <main className="shell" style={{ maxWidth: "56rem" }}>
+      <SiteHeader
+        actions={
+          <>
+            <Link href="/" className="nav-link">
+              Home
+            </Link>
+            <span className="status-inline">Signed in as {data.signedInEmail}</span>
+          </>
+        }
+      />
+
+      <section className="hero" style={{ marginBottom: "1.25rem" }}>
+        <h1 style={{ maxWidth: "none", fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>Admin</h1>
+        <p>Jobs, people, prompt, topics, and API keys.</p>
+      </section>
 
       <nav
         aria-label="Admin sections"
@@ -1020,7 +1030,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
           display: "flex",
           flexWrap: "wrap",
           gap: "0.25rem 0.5rem",
-          borderBottom: "1px solid #ddd",
+          borderBottom: "1px solid var(--line)",
           marginBottom: "1.75rem",
         }}
       >

@@ -191,6 +191,8 @@ describe("prompt", () => {
       assert.match(body, /Starlink/);
       assert.match(body, /<h3>Topic Name<\/h3>/);
       assert.match(body, /Put <hr\/> between topics/);
+      assert.match(body, /TITLE for publish_digest_page/);
+      assert.match(body, /\{HH:MM\} UTC/);
     });
   });
 });

@@ -83,15 +83,21 @@ export function GenerateButton() {
   const label = pending
     ? "Starting…"
     : activeJob
-      ? `In progress (${activeJob.status})…`
+      ? `In progress…`
       : "Generate now";
 
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
-      <button type="button" onClick={handleGenerate} disabled={busy} title={activeJob ? `Job ${activeJob.id}` : undefined}>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={handleGenerate}
+        disabled={busy}
+        title={activeJob ? `Job ${activeJob.id}` : undefined}
+      >
         {label}
       </button>
-      {status ? <span style={{ color: "#666", fontSize: "0.875rem" }}>{status}</span> : null}
+      {status ? <span className="status-inline">{status}</span> : null}
     </span>
   );
 }

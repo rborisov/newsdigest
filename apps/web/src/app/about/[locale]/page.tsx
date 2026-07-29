@@ -4,11 +4,11 @@ import { notFound } from "next/navigation";
 import { SiteFooter } from "@/app/site-footer";
 import { SiteHeader } from "@/app/site-header";
 import {
-  aboutFooterLinks,
   aboutSectionLabels,
   isAboutLocaleEnabled,
   parseAboutLocale,
   pickAboutLocaleContent,
+  siteFooterLinks,
   type AboutLocale,
 } from "@/lib/about-page";
 import { renderAboutMarkdown } from "@/lib/about-markdown";
@@ -59,7 +59,7 @@ export default async function AboutLocalePage({ params }: AboutLocalePageProps) 
   ].filter((section) => section.body.trim());
 
   const switchLocales = otherEnabledLocales(about, locale);
-  const footerLinks = aboutFooterLinks(about);
+  const footerLinks = siteFooterLinks(about);
 
   return (
     <main className="shell">

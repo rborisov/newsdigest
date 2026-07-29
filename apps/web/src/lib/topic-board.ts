@@ -89,12 +89,57 @@ export function selectBoardPages(
   return board;
 }
 
+export async function loadRecentDigests(
+  prisma: PrismaClient,
+  take = 48,
+): Promise<{
+  items: SidebarItem[];
+  indexUrl: string;
+  displayTimezone: string;
+}> {
+  const [meta, pages, promptConfig] = await Promise.all([
+    prisma.telegraphMeta.findUnique({ where: { id: "default" } }),
+    prisma.topicPage.findMany({
+      orderBy: { publishedAt: "desc" },
+      take,
+      select: {
+        id: true,
+        topicName: true,
+        title: true,
+        telegraphUrl: true,
+        publishedAt: true,
+        stories: {
+          take: 6,
+          orderBy: { firstSeenAt: "asc" as const },
+          select: { title: true },
+        },
+      },
+    }),
+    prisma.promptConfig.findUnique({
+      where: { id: "default" },
+      select: { displayTimezone: true },
+    }),
+  ]);
+
+  return {
+    items: pages.map((page) => ({
+      id: page.id,
+      topicName: page.topicName,
+      title: page.title,
+      telegraphUrl: page.telegraphUrl,
+      publishedAt: page.publishedAt,
+      storyTitles: page.stories.map((story) => story.title),
+    })),
+    indexUrl: meta?.currentIndexUrl?.trim() ?? "",
+    displayTimezone: promptConfig?.displayTimezone?.trim() || "UTC",
+  };
+}
+
 export async function loadTopicBoard(
   prisma: PrismaClient,
   now = new Date(),
 ): Promise<{
   board: BoardCard[];
-  sidebar: SidebarItem[];
   indexUrl: string;
   displayTimezone: string;
 }> {
@@ -116,7 +161,7 @@ export async function loadTopicBoard(
     },
   };
 
-  const [meta, topics, boardPages, sidebarPages, promptConfig] = await Promise.all([
+  const [meta, topics, boardPages, promptConfig] = await Promise.all([
     prisma.telegraphMeta.findUnique({ where: { id: "default" } }),
     prisma.topic.findMany({
       where: { enabled: true },
@@ -126,22 +171,6 @@ export async function loadTopicBoard(
     prisma.topicPage.findMany({
       where: { publishedAt: { gte: cutoff } },
       select: pageSelect,
-    }),
-    prisma.topicPage.findMany({
-      orderBy: { publishedAt: "desc" },
-      take: 24,
-      select: {
-        id: true,
-        topicName: true,
-        title: true,
-        telegraphUrl: true,
-        publishedAt: true,
-        stories: {
-          take: 6,
-          orderBy: { firstSeenAt: "asc" as const },
-          select: { title: true },
-        },
-      },
     }),
     prisma.promptConfig.findUnique({
       where: { id: "default" },
@@ -167,18 +196,8 @@ export async function loadTopicBoard(
     now,
   );
 
-  const sidebar: SidebarItem[] = sidebarPages.map((page) => ({
-    id: page.id,
-    topicName: page.topicName,
-    title: page.title,
-    telegraphUrl: page.telegraphUrl,
-    publishedAt: page.publishedAt,
-    storyTitles: page.stories.map((story) => story.title),
-  }));
-
   return {
     board,
-    sidebar,
     indexUrl: meta?.currentIndexUrl?.trim() ?? "",
     displayTimezone: promptConfig?.displayTimezone?.trim() || "UTC",
   };

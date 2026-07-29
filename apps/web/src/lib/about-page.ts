@@ -96,3 +96,18 @@ export function aboutFooterLinks(page: {
   }
   return links;
 }
+
+/** Site-wide footer: digests first, then enabled About locales. */
+export function siteFooterLinks(
+  page: {
+    enabledEn: boolean;
+    enabledRu: boolean;
+    footerLabelEn: string;
+    footerLabelRu: string;
+  } | null,
+): { href: string; label: string }[] {
+  return [
+    { href: "/digests", label: "Recent digests" },
+    ...(page ? aboutFooterLinks(page) : []),
+  ];
+}

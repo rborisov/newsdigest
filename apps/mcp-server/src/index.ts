@@ -10,6 +10,7 @@ type PublishResponse = {
   digestPath?: string;
   indexUrl?: string;
   indexPath?: string;
+  topicPageId?: string;
   publishedPageId?: string;
   softFail?: boolean;
   idempotent?: boolean;
@@ -118,6 +119,9 @@ function createServer(): McpServer {
         "Publish a news digest HTML page to Telegra.ph via the portal internal API. Use only on the final merge_publish step after all topic drafts are saved.",
       inputSchema: {
         jobId: z.string().min(1).describe("Generation job ID from the agent prompt"),
+        stepId: z.string().optional().describe("Generation step ID for this topic publish"),
+        topicId: z.string().optional().describe("Topic ID when publishing a single topic page"),
+        topicName: z.string().optional().describe("Topic name for this publish (required unless stepId resolves it)"),
         title: z.string().min(1).describe("Digest page title"),
         htmlContent: z.string().min(1).describe("HTML body for the digest page"),
         stories: z
@@ -126,7 +130,7 @@ function createServer(): McpServer {
           .describe("Optional story fingerprints for deduplication metadata"),
       },
     },
-    async ({ jobId, title, htmlContent, stories }) => {
+    async ({ jobId, stepId, topicId, topicName, title, htmlContent, stories }) => {
       const response = await fetch(`${portalBaseUrl()}/api/internal/publish`, {
         method: "POST",
         headers: {
@@ -135,6 +139,9 @@ function createServer(): McpServer {
         },
         body: JSON.stringify({
           jobId,
+          ...(stepId ? { stepId } : {}),
+          ...(topicId ? { topicId } : {}),
+          ...(topicName ? { topicName } : {}),
           title,
           htmlContent,
           ...(stories && stories.length > 0 ? { stories } : {}),
@@ -163,7 +170,8 @@ function createServer(): McpServer {
                 digestPath: data.digestPath ?? "",
                 indexUrl: data.indexUrl ?? "",
                 indexPath: data.indexPath ?? "",
-                publishedPageId: data.publishedPageId,
+                topicPageId: data.topicPageId ?? data.publishedPageId,
+                publishedPageId: data.publishedPageId ?? data.topicPageId,
                 idempotent: data.idempotent ?? false,
               },
               null,

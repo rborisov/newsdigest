@@ -1,3 +1,7 @@
+import type { PrismaClient } from "@prisma/client";
+
+import { prisma as defaultPrisma } from "./db";
+
 export const EXCLUDE_LOOKBACK_DAYS = 30;
 export const EXCLUDE_MAX_STORIES = 150;
 
@@ -204,4 +208,71 @@ export function normalizeStoryFingerprints(stories: StoryFingerprint[]): StoryFi
     canonicalUrl: story.canonicalUrl ? normalizeCanonicalUrl(story.canonicalUrl) : null,
     titleKey: story.titleKey ?? normalizeTitleKey(story.title),
   }));
+}
+
+function knownStoryKey(row: KnownStory): string {
+  return row.canonicalUrl ?? row.titleKey ?? "";
+}
+
+/** StoryIndex primary; PublishedStory fallback until legacy backfill completes. */
+export async function loadKnownStories(
+  db: PrismaClient = defaultPrisma,
+  now: Date = new Date(),
+): Promise<KnownStory[]> {
+  const since = new Date(now);
+  since.setDate(since.getDate() - EXCLUDE_LOOKBACK_DAYS);
+
+  const [storyIndexRows, publishedStoryRows] = await Promise.all([
+    db.storyIndex.findMany({
+      where: { firstSeenAt: { gte: since } },
+      orderBy: { firstSeenAt: "desc" },
+      take: EXCLUDE_MAX_STORIES,
+      select: {
+        canonicalUrl: true,
+        titleKey: true,
+      },
+    }),
+    db.publishedStory.findMany({
+      where: { firstSeenAt: { gte: since } },
+      orderBy: { firstSeenAt: "desc" },
+      take: EXCLUDE_MAX_STORIES,
+      select: {
+        canonicalUrl: true,
+        titleKey: true,
+      },
+    }),
+  ]);
+
+  const seen = new Set<string>();
+  const result: KnownStory[] = [];
+
+  for (const row of storyIndexRows) {
+    const key = knownStoryKey(row);
+    if (key && seen.has(key)) {
+      continue;
+    }
+    if (key) {
+      seen.add(key);
+    }
+    result.push(row);
+    if (result.length >= EXCLUDE_MAX_STORIES) {
+      return result;
+    }
+  }
+
+  for (const row of publishedStoryRows) {
+    const key = knownStoryKey(row);
+    if (key && seen.has(key)) {
+      continue;
+    }
+    if (key) {
+      seen.add(key);
+    }
+    result.push(row);
+    if (result.length >= EXCLUDE_MAX_STORIES) {
+      return result;
+    }
+  }
+
+  return result;
 }

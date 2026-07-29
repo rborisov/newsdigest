@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import {
   enrichStoriesFromHtml,
+  loadKnownStories,
   normalizeStoryFingerprints,
   parseStoriesFromHtml,
   type StoryFingerprint,
@@ -15,6 +16,7 @@ import {
   needsIndexLinkResume,
   PUBLISH_SOFT_FAIL_MESSAGES,
   shouldReturnExistingPublish,
+  shouldReturnLegacyPublish,
 } from "@/lib/publish-validation";
 import { requireInternalApi } from "@/lib/require-internal";
 import {
@@ -25,6 +27,9 @@ import {
 
 type PublishRequestBody = {
   jobId?: string;
+  stepId?: string;
+  topicId?: string | null;
+  topicName?: string;
   title?: string;
   htmlContent?: string;
   html?: string;
@@ -40,6 +45,31 @@ function toPublishStories(stories: StoryFingerprint[]): PublishStoryInput[] {
   }));
 }
 
+async function findExistingTopicPage(params: {
+  stepId: string | null;
+  jobId: string;
+  topicId: string | null;
+  topicName: string;
+}) {
+  if (params.stepId) {
+    return prisma.topicPage.findUnique({
+      where: { stepId: params.stepId },
+      include: { indexPage: true },
+    });
+  }
+
+  return prisma.topicPage.findFirst({
+    where: {
+      jobId: params.jobId,
+      ...(params.topicId
+        ? { topicId: params.topicId }
+        : { topicName: params.topicName }),
+    },
+    orderBy: { publishedAt: "desc" },
+    include: { indexPage: true },
+  });
+}
+
 export async function POST(request: Request) {
   const auth = requireInternalApi(request);
   if (auth.error) {
@@ -50,6 +80,9 @@ export async function POST(request: Request) {
   const jobId = body.jobId?.trim() ?? "";
   const title = body.title?.trim() ?? "";
   const html = (body.htmlContent ?? body.html ?? "").trim();
+  let stepId = body.stepId?.trim() || null;
+  let topicId = body.topicId?.trim() || null;
+  let topicName = body.topicName?.trim() ?? "";
 
   if (!jobId) {
     return NextResponse.json({ error: "jobId is required." }, { status: 400 });
@@ -59,6 +92,19 @@ export async function POST(request: Request) {
   }
   if (!html) {
     return NextResponse.json({ error: "htmlContent is required." }, { status: 400 });
+  }
+
+  if (stepId) {
+    const step = await prisma.generationStep.findUnique({ where: { id: stepId } });
+    if (!step || step.jobId !== jobId) {
+      return NextResponse.json({ error: "Generation step not found." }, { status: 404 });
+    }
+    topicId = topicId ?? step.topicId;
+    topicName = topicName || step.topicName || "";
+  }
+
+  if (!topicName) {
+    return NextResponse.json({ error: "topicName is required." }, { status: 400 });
   }
 
   const job = await prisma.generationJob.findUnique({
@@ -76,22 +122,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Generation job not found." }, { status: 404 });
   }
 
-  if (job.status === GenerationJobStatus.completed && !job.publishedPage) {
-    return NextResponse.json(
-      { error: "Job already completed but published page is missing.", jobId },
-      { status: 409 },
-    );
-  }
+  const existingTopicPage = await findExistingTopicPage({
+    stepId,
+    jobId,
+    topicId,
+    topicName,
+  });
 
-  if (shouldReturnExistingPublish(job.status, job.publishedPage)) {
-    const page = job.publishedPage!;
+  if (shouldReturnExistingPublish(existingTopicPage)) {
+    const page = existingTopicPage!;
     const meta = await prisma.telegraphMeta.findUnique({ where: { id: "default" } });
     const indexUrl = page.indexPage?.telegraphUrl ?? meta?.currentIndexUrl ?? "";
     const indexPath = page.indexPage?.telegraphPath ?? meta?.currentIndexPath ?? "";
 
     return NextResponse.json(
       buildExistingPublishResponse(jobId, {
-        publishedPageId: page.id,
+        topicPageId: page.id,
         digestUrl: page.telegraphUrl,
         digestPath: page.telegraphPath,
         indexUrl,
@@ -100,7 +146,72 @@ export async function POST(request: Request) {
     );
   }
 
-  // Partial publish: digest exists but was never linked to the index — resume only.
+  if (shouldReturnLegacyPublish(job.status, job.publishedPage)) {
+    const page = job.publishedPage!;
+    const meta = await prisma.telegraphMeta.findUnique({ where: { id: "default" } });
+    const indexUrl = page.indexPage?.telegraphUrl ?? meta?.currentIndexUrl ?? "";
+    const indexPath = page.indexPage?.telegraphPath ?? meta?.currentIndexPath ?? "";
+
+    return NextResponse.json({
+      ok: true,
+      jobId,
+      idempotent: true,
+      digestUrl: page.telegraphUrl,
+      digestPath: page.telegraphPath,
+      indexUrl,
+      indexPath,
+      publishedPageId: page.id,
+    });
+  }
+
+  if (job.status === GenerationJobStatus.completed && !existingTopicPage && !job.publishedPage) {
+    return NextResponse.json(
+      { error: "Job already completed but published page is missing.", jobId },
+      { status: 409 },
+    );
+  }
+
+  if (needsIndexLinkResume(existingTopicPage)) {
+    try {
+      const page = existingTopicPage!;
+      const index = await linkDigestToIndex(page.id);
+
+      await prisma.generationJob.update({
+        where: { id: jobId },
+        data: {
+          status: GenerationJobStatus.completed,
+          error: null,
+        },
+      });
+
+      await markMergeStepCompleted(jobId);
+
+      return NextResponse.json({
+        ok: true,
+        jobId,
+        resumed: true,
+        digestUrl: page.telegraphUrl,
+        digestPath: page.telegraphPath,
+        indexUrl: index.indexUrl,
+        indexPath: index.indexPath,
+        topicPageId: page.id,
+        publishedPageId: page.id,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Publish failed.";
+      await prisma.generationJob.update({
+        where: { id: jobId },
+        data: {
+          status: GenerationJobStatus.failed,
+          error: message,
+        },
+      });
+      await markMergeStepFailed(jobId, message);
+
+      return NextResponse.json({ error: message, jobId }, { status: 502 });
+    }
+  }
+
   if (needsIndexLinkResume(job.publishedPage)) {
     try {
       const page = job.publishedPage!;
@@ -148,12 +259,7 @@ export async function POST(request: Request) {
     html,
   );
 
-  const knownStories = await prisma.publishedStory.findMany({
-    select: {
-      canonicalUrl: true,
-      titleKey: true,
-    },
-  });
+  const knownStories = await loadKnownStories(prisma);
 
   const softFailReason = getPublishSoftFailReason(stories, knownStories);
   if (softFailReason) {
@@ -170,13 +276,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message, jobId, softFail: true }, { status: 409 });
   }
 
-  const otherInProgressPublish = await prisma.generationJob.findFirst({
+  const otherInProgressPublish = await prisma.topicPage.findFirst({
     where: {
-      id: { not: jobId },
-      status: GenerationJobStatus.running,
-      publishedPage: { is: { indexPageId: null } },
+      indexPageId: null,
+      ...(stepId
+        ? { NOT: { stepId } }
+        : {
+            NOT: {
+              jobId,
+              topicName,
+            },
+          }),
     },
-    select: { id: true },
+    select: { id: true, jobId: true },
   });
 
   if (otherInProgressPublish) {
@@ -184,7 +296,8 @@ export async function POST(request: Request) {
       {
         error: "Another publish is in progress; retry after it finishes linking to the index.",
         jobId,
-        conflictingJobId: otherInProgressPublish.id,
+        conflictingTopicPageId: otherInProgressPublish.id,
+        conflictingJobId: otherInProgressPublish.jobId,
       },
       { status: 409 },
     );
@@ -205,6 +318,9 @@ export async function POST(request: Request) {
       html,
       stories: toPublishStories(stories),
       jobId,
+      topicId,
+      topicName,
+      stepId,
       triggerType,
       triggeredBy,
     });
@@ -225,7 +341,8 @@ export async function POST(request: Request) {
       digestPath: result.digestPath,
       indexUrl: result.indexUrl,
       indexPath: result.indexPath,
-      publishedPageId: result.publishedPageId,
+      topicPageId: result.topicPageId,
+      publishedPageId: result.topicPageId,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Publish failed.";

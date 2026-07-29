@@ -65,6 +65,9 @@ export type PublishDigestInput = {
   html: string;
   stories: PublishStoryInput[];
   jobId: string;
+  topicId?: string | null;
+  topicName: string;
+  stepId?: string | null;
   triggerType: TriggerType;
   triggeredBy: string;
 };
@@ -74,8 +77,19 @@ export type PublishDigestResult = {
   digestPath: string;
   indexUrl: string;
   indexPath: string;
-  publishedPageId: string;
+  topicPageId: string;
 };
+
+export type IndexDigestPage = {
+  id: string;
+  title: string;
+  telegraphUrl: string;
+  telegraphPath: string;
+  publishedAt: Date;
+  storyTitles?: string[];
+};
+
+export type IndexPageKind = "topic" | "published";
 
 export type IndexUpdateAction = "create_first" | "edit" | "rotate";
 
@@ -474,14 +488,8 @@ export async function withIndexUpdateLock<T>(
 
 async function updateIndexAfterPublishUnlocked(
   params: {
-    publishedPage: {
-      id: string;
-      title: string;
-      telegraphUrl: string;
-      telegraphPath: string;
-      createdAt: Date;
-      storyTitles?: string[];
-    };
+    digestPage: IndexDigestPage;
+    pageKind: IndexPageKind;
   } & TelegraphDeps,
 ): Promise<{ indexUrl: string; indexPath: string; action: IndexUpdateAction }> {
   const db = params.prisma ?? defaultPrisma;
@@ -512,6 +520,20 @@ async function updateIndexAfterPublishUnlocked(
               },
             },
           },
+          topicPages: {
+            orderBy: { publishedAt: "desc" },
+            select: {
+              id: true,
+              title: true,
+              telegraphUrl: true,
+              publishedAt: true,
+              stories: {
+                take: 4,
+                orderBy: { firstSeenAt: "asc" },
+                select: { title: true },
+              },
+            },
+          },
         },
       })
     : null;
@@ -519,29 +541,52 @@ async function updateIndexAfterPublishUnlocked(
   const toIndexLink = (page: {
     title: string;
     telegraphUrl: string;
-    createdAt: Date;
+    publishedAt: Date;
     stories?: { title: string }[];
     storyTitles?: string[];
   }): IndexDigestLink => ({
     title: formatIndexLinkLabel({
       title: page.title,
-      createdAt: page.createdAt,
+      createdAt: page.publishedAt,
       storyTitles: page.storyTitles ?? page.stories?.map((story) => story.title) ?? [],
     }),
     url: page.telegraphUrl,
   });
 
-  const newDigestLink = toIndexLink(params.publishedPage);
+  const newDigestLink = toIndexLink(params.digestPage);
 
-  const existingLinks: IndexDigestLink[] =
-    currentIndex?.publishedPages
-      .filter((page) => page.id !== params.publishedPage.id)
-      .map((page) => toIndexLink(page)) ?? [];
+  const indexedPages = [
+    ...(currentIndex?.publishedPages.map((page) => ({
+      id: page.id,
+      title: page.title,
+      telegraphUrl: page.telegraphUrl,
+      publishedAt: page.createdAt,
+      stories: page.stories,
+    })) ?? []),
+    ...(currentIndex?.topicPages ?? []),
+  ].sort((left, right) => right.publishedAt.getTime() - left.publishedAt.getTime());
+
+  const existingLinks: IndexDigestLink[] = indexedPages
+    .filter((page) => page.id !== params.digestPage.id)
+    .map((page) => toIndexLink(page));
 
   const digestLinksForCandidate = [newDigestLink, ...existingLinks];
   const previousIndexUrl = currentIndex?.previousIndex?.telegraphUrl;
   const candidateHtml = buildIndexHtml(digestLinksForCandidate, previousIndexUrl);
   const action = decideIndexUpdateAction(Boolean(currentIndex), candidateHtml);
+
+  const linkPageToIndex = (indexPageId: string) => {
+    if (params.pageKind === "topic") {
+      return db.topicPage.update({
+        where: { id: params.digestPage.id },
+        data: { indexPageId },
+      });
+    }
+    return db.publishedPage.update({
+      where: { id: params.digestPage.id },
+      data: { indexPageId },
+    });
+  };
 
   if (action === "create_first") {
     const indexHtml = buildIndexHtml([newDigestLink]);
@@ -570,10 +615,7 @@ async function updateIndexAfterPublishUnlocked(
           currentIndexUrl: created.url,
         },
       }),
-      db.publishedPage.update({
-        where: { id: params.publishedPage.id },
-        data: { indexPageId: indexPage.id },
-      }),
+      linkPageToIndex(indexPage.id),
     ]);
 
     return { indexUrl: created.url, indexPath: created.path, action };
@@ -602,10 +644,7 @@ async function updateIndexAfterPublishUnlocked(
           currentIndexUrl: edited.url,
         },
       }),
-      db.publishedPage.update({
-        where: { id: params.publishedPage.id },
-        data: { indexPageId: currentIndex.id },
-      }),
+      linkPageToIndex(currentIndex.id),
     ]);
 
     return { indexUrl: edited.url, indexPath: edited.path, action };
@@ -649,10 +688,7 @@ async function updateIndexAfterPublishUnlocked(
         currentIndexUrl: created.url,
       },
     }),
-    db.publishedPage.update({
-      where: { id: params.publishedPage.id },
-      data: { indexPageId: newIndexPage.id },
-    }),
+    linkPageToIndex(newIndexPage.id),
   ]);
 
   return { indexUrl: created.url, indexPath: created.path, action: "rotate" };
@@ -660,14 +696,8 @@ async function updateIndexAfterPublishUnlocked(
 
 export async function updateIndexAfterPublish(
   params: {
-    publishedPage: {
-      id: string;
-      title: string;
-      telegraphUrl: string;
-      telegraphPath: string;
-      createdAt: Date;
-      storyTitles?: string[];
-    };
+    digestPage: IndexDigestPage;
+    pageKind: IndexPageKind;
   } & TelegraphDeps,
 ): Promise<{ indexUrl: string; indexPath: string; action: IndexUpdateAction }> {
   const db = params.prisma ?? defaultPrisma;
@@ -679,12 +709,54 @@ export async function updateIndexAfterPublish(
  * index (partial publish). Does not create another Telegra.ph digest page.
  */
 export async function linkDigestToIndex(
-  publishedPageId: string,
+  pageId: string,
   deps: TelegraphDeps = {},
 ): Promise<{ indexUrl: string; indexPath: string; action: IndexUpdateAction }> {
   const db = deps.prisma ?? defaultPrisma;
+
+  const topicPage = await db.topicPage.findUnique({
+    where: { id: pageId },
+    include: {
+      stories: {
+        take: 4,
+        orderBy: { firstSeenAt: "asc" },
+        select: { title: true },
+      },
+    },
+  });
+
+  if (topicPage) {
+    if (topicPage.indexPageId) {
+      const indexPage = await db.telegraphIndexPage.findUnique({
+        where: { id: topicPage.indexPageId },
+      });
+      if (!indexPage) {
+        throw new Error("Index page linked to topic digest is missing");
+      }
+      return {
+        indexUrl: indexPage.telegraphUrl,
+        indexPath: indexPage.telegraphPath,
+        action: "edit",
+      };
+    }
+
+    return updateIndexAfterPublish({
+      digestPage: {
+        id: topicPage.id,
+        title: topicPage.title,
+        telegraphUrl: topicPage.telegraphUrl,
+        telegraphPath: topicPage.telegraphPath,
+        publishedAt: topicPage.publishedAt,
+        storyTitles: topicPage.stories.map((story) => story.title),
+      },
+      pageKind: "topic",
+      prisma: db,
+      fetchFn: deps.fetchFn,
+    });
+  }
+
   const publishedPage = await db.publishedPage.findUnique({
-    where: { id: publishedPageId },
+    where: { id: pageId },
     include: {
       stories: {
         take: 4,
@@ -713,14 +785,15 @@ export async function linkDigestToIndex(
   }
 
   return updateIndexAfterPublish({
-    publishedPage: {
+    digestPage: {
       id: publishedPage.id,
       title: publishedPage.title,
       telegraphUrl: publishedPage.telegraphUrl,
       telegraphPath: publishedPage.telegraphPath,
-      createdAt: publishedPage.createdAt,
+      publishedAt: publishedPage.createdAt,
       storyTitles: publishedPage.stories.map((story) => story.title),
     },
+    pageKind: "published",
     prisma: db,
     fetchFn: deps.fetchFn,
   });
@@ -744,54 +817,58 @@ export async function publishDigest(
     fetchFn,
   });
 
-  const publishedPage = await db.publishedPage.create({
+  const topicPage = await db.topicPage.create({
     data: {
+      topicId: input.topicId ?? null,
+      topicName: input.topicName,
       title: input.title,
       telegraphPath: digest.path,
       telegraphUrl: digest.url,
       triggerType: input.triggerType,
       triggeredBy: input.triggeredBy,
       jobId: input.jobId,
+      stepId: input.stepId ?? null,
     },
   });
 
   for (const story of input.stories) {
     if (story.canonicalUrl) {
-      await db.publishedStory.upsert({
+      await db.storyIndex.upsert({
         where: { canonicalUrl: story.canonicalUrl },
         update: {
           title: story.title,
           titleKey: story.titleKey ?? null,
-          publishedPageId: publishedPage.id,
+          topicPageId: topicPage.id,
         },
         create: {
           title: story.title,
           canonicalUrl: story.canonicalUrl,
           titleKey: story.titleKey ?? null,
-          publishedPageId: publishedPage.id,
+          topicPageId: topicPage.id,
         },
       });
       continue;
     }
 
-    await db.publishedStory.create({
+    await db.storyIndex.create({
       data: {
         title: story.title,
         titleKey: story.titleKey ?? null,
-        publishedPageId: publishedPage.id,
+        topicPageId: topicPage.id,
       },
     });
   }
 
   const index = await updateIndexAfterPublish({
-    publishedPage: {
-      id: publishedPage.id,
-      title: publishedPage.title,
-      telegraphUrl: publishedPage.telegraphUrl,
-      telegraphPath: publishedPage.telegraphPath,
-      createdAt: publishedPage.createdAt,
+    digestPage: {
+      id: topicPage.id,
+      title: topicPage.title,
+      telegraphUrl: topicPage.telegraphUrl,
+      telegraphPath: topicPage.telegraphPath,
+      publishedAt: topicPage.publishedAt,
       storyTitles: input.stories.map((story) => story.title),
     },
+    pageKind: "topic",
     prisma: db,
     fetchFn,
   });
@@ -801,6 +878,6 @@ export async function publishDigest(
     digestPath: digest.path,
     indexUrl: index.indexUrl,
     indexPath: index.indexPath,
-    publishedPageId: publishedPage.id,
+    topicPageId: topicPage.id,
   };
 }

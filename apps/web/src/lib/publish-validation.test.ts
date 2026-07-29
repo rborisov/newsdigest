@@ -7,6 +7,7 @@ import {
   getPublishSoftFailReason,
   needsIndexLinkResume,
   shouldReturnExistingPublish,
+  shouldReturnLegacyPublish,
 } from "./publish-validation";
 
 describe("publish-validation", () => {
@@ -34,39 +35,38 @@ describe("publish-validation", () => {
   });
 
   describe("shouldReturnExistingPublish", () => {
-    it("returns true only when job is completed and digest is index-linked", () => {
+    it("returns true when the topic page is index-linked", () => {
       assert.equal(
-        shouldReturnExistingPublish(GenerationJobStatus.completed, {
+        shouldReturnExistingPublish({
           indexPageId: "idx_1",
         }),
         true,
       );
     });
 
-    it("returns false when a published page exists but is not index-linked", () => {
+    it("returns false when a topic page exists but is not index-linked", () => {
       assert.equal(
-        shouldReturnExistingPublish(GenerationJobStatus.failed, {
+        shouldReturnExistingPublish({
           indexPageId: null,
         }),
         false,
       );
-      assert.equal(
-        shouldReturnExistingPublish(GenerationJobStatus.running, {
-          indexPageId: null,
-        }),
-        false,
-      );
-      assert.equal(
-        shouldReturnExistingPublish(GenerationJobStatus.completed, {
-          indexPageId: null,
-        }),
-        false,
-      );
+      assert.equal(shouldReturnExistingPublish(null), false);
     });
+  });
 
-    it("returns false for a fresh running job without a page", () => {
+  describe("shouldReturnLegacyPublish", () => {
+    it("returns true only when job is completed and legacy page is index-linked", () => {
       assert.equal(
-        shouldReturnExistingPublish(GenerationJobStatus.running, null),
+        shouldReturnLegacyPublish(GenerationJobStatus.completed, {
+          indexPageId: "idx_1",
+        }),
+        true,
+      );
+      assert.equal(
+        shouldReturnLegacyPublish(GenerationJobStatus.running, {
+          indexPageId: "idx_1",
+        }),
         false,
       );
     });
@@ -86,7 +86,7 @@ describe("publish-validation", () => {
   describe("buildExistingPublishResponse", () => {
     it("includes idempotent flag and existing page URLs", () => {
       const response = buildExistingPublishResponse("job_1", {
-        publishedPageId: "page_1",
+        topicPageId: "page_1",
         digestUrl: "https://telegra.ph/Digest-07-28",
         digestPath: "Digest-07-28",
         indexUrl: "https://telegra.ph/Index",
@@ -96,6 +96,7 @@ describe("publish-validation", () => {
       assert.equal(response.ok, true);
       assert.equal(response.idempotent, true);
       assert.equal(response.jobId, "job_1");
+      assert.equal(response.topicPageId, "page_1");
       assert.equal(response.publishedPageId, "page_1");
       assert.equal(response.digestUrl, "https://telegra.ph/Digest-07-28");
     });

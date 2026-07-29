@@ -25,14 +25,25 @@ export function getPublishSoftFailReason(
   return null;
 }
 
+export type IndexLinkedPage = {
+  indexPageId: string | null;
+};
+
 /**
- * Idempotent success only when the job fully finished AND the digest is
- * linked on the index. A PublishedPage without indexPageId is a partial
- * publish that must resume index linking — not short-circuit as success.
+ * Idempotent success when this step/topic page is already linked on the index.
+ * A TopicPage without indexPageId is a partial publish that must resume index
+ * linking — not short-circuit as success.
  */
 export function shouldReturnExistingPublish(
+  topicPage: IndexLinkedPage | null | undefined,
+): boolean {
+  return topicPage != null && topicPage.indexPageId != null;
+}
+
+/** Legacy merge publish: job completed with a linked PublishedPage. */
+export function shouldReturnLegacyPublish(
   jobStatus: GenerationJobStatus,
-  publishedPage: { indexPageId: string | null } | null | undefined,
+  publishedPage: IndexLinkedPage | null | undefined,
 ): boolean {
   return (
     jobStatus === GenerationJobStatus.completed &&
@@ -43,13 +54,13 @@ export function shouldReturnExistingPublish(
 
 /** Digest page exists but was never linked onto the index (partial publish). */
 export function needsIndexLinkResume(
-  publishedPage: { indexPageId: string | null } | null | undefined,
+  topicPage: IndexLinkedPage | null | undefined,
 ): boolean {
-  return publishedPage != null && publishedPage.indexPageId == null;
+  return topicPage != null && topicPage.indexPageId == null;
 }
 
 export type ExistingPublishPayload = {
-  publishedPageId: string;
+  topicPageId: string;
   digestUrl: string;
   digestPath: string;
   indexUrl: string;
@@ -68,6 +79,7 @@ export function buildExistingPublishResponse(
     digestPath: page.digestPath,
     indexUrl: page.indexUrl,
     indexPath: page.indexPath,
-    publishedPageId: page.publishedPageId,
+    topicPageId: page.topicPageId,
+    publishedPageId: page.topicPageId,
   };
 }

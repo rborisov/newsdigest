@@ -16,11 +16,11 @@ Prefer source URLs so future digests can deduplicate reliably.
 EXCLUDE_STORIES:
 {{EXCLUDE_STORIES}}
 
-When ready, publish the digest via the publish_digest_page MCP tool.
+When ready, publish via the publish_digest_page MCP tool.
 Do not finish until publish_digest_page returns a URL.
 If publish fails, retry once then report the error.
 
-Note: multi-topic Generate runs are split into per-topic draft steps. On a draft step the job footer tells you to call save_topic_draft instead of publish_digest_page — follow the footer.`;
+Note: multi-topic Generate runs use one publish step per enabled topic. The job footer names the single topic for this step — research and publish only that topic via publish_digest_page.`;
 
 function parseAllowedEmails(raw: string | undefined): string[] {
   return (raw ?? "")

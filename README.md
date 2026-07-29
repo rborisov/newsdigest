@@ -178,7 +178,11 @@ The portal spawns the CLI when an admin clicks **Generate now** or when the work
 
 Headless spawn uses `-p --force --sandbox disabled --trust --approve-mcps` so fetch/shell/MCP are not silently rejected. `install.sh` also writes `/root/.cursor/cli-config.json` (allow Shell/WebFetch/Mcp) and `sandbox.json` (allow localhost for portal MCP). Without those, job logs show “environment blocked” and no `digestUrl`.
 
-**Multi-step generation (option C):** each Generate creates one parent job with a `topic_draft` step per enabled topic, then a final `merge_publish` step. Draft agents call MCP `save_topic_draft`; only the merge step calls `publish_digest_page` (one Telegra.ph page).
+**Per-topic publish pipeline:** each Generate creates one parent job with a `topic_publish` step per enabled topic. Each step researches that topic and calls MCP `publish_digest_page` immediately (one Telegra.ph page per topic). Steps run sequentially; when all complete, the job is done. There is no merge step.
+
+**Home page (topic board):** the main area shows the latest digest per enabled topic within the **board stale window** (`boardStaleDays` in admin prompt settings, default 1 day). The sidebar lists recent topic digests (newest first) with links to Telegra.ph. Article HTML lives on Telegra.ph only; the portal stores metadata in `TopicPage` and `StoryIndex`.
+
+**Legacy models:** `PublishedPage` / `PublishedStory` remain in the schema for old merged digests and idempotent publish on pre-migration jobs. New publishes write `TopicPage` / `StoryIndex`. Run `npm run backfill:topic-pages --workspace=web` once after upgrade to migrate old pages.
 
 | Mode | When to use | Setup |
 |------|-------------|--------|
@@ -200,7 +204,7 @@ Requirements:
 5. Sign in with Google or Yandex using an allowlisted email.
 6. Admin → verify Telegra.ph token (env or UI), add a topic, optionally add a schedule.
 7. **Generate now** — confirm a job starts (requires CLI + MCP configured on the host or in-container).
-8. After a successful run, Telegra.ph shows the digest and the portal index updates.
+8. After a successful run, Telegra.ph shows one page per topic and the portal index updates; the home topic board reflects fresh publishes within the stale window.
 
 Backup the `digest-data` Docker volume regularly on VPS deployments.
 

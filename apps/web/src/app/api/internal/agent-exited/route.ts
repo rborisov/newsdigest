@@ -15,7 +15,7 @@ type Body = {
 /**
  * Called by the agent spawn wrapper after Cursor exits. If the step/job is still
  * marked running, the agent left without MCP completion — fail so Generate unlocks.
- * Delayed slightly by the wrapper to avoid racing a successful save_topic_draft / publish.
+ * Delayed slightly by the wrapper to avoid racing a successful publish_digest_page.
  */
 export async function POST(request: Request) {
   const auth = requireInternalApi(request);

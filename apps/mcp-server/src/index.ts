@@ -41,32 +41,6 @@ function createServer(): McpServer {
   });
 
   server.registerTool(
-    "save_topic_draft",
-    {
-      description:
-        "Deprecated — per-topic publish steps call publish_digest_page directly. Do not use.",
-      inputSchema: {
-        jobId: z.string().min(1).describe("Generation job ID from the agent prompt"),
-        topic: z.string().min(1).describe("Topic name exactly as given in the prompt"),
-        html: z.string().min(1).describe("HTML section for this topic only"),
-        stories: z
-          .array(storySchema)
-          .optional()
-          .describe("Optional story fingerprints for this topic draft"),
-      },
-    },
-    async () => ({
-      content: [
-        {
-          type: "text",
-          text: "save_topic_draft is deprecated. Call publish_digest_page for this topic publish step instead.",
-        },
-      ],
-      isError: true,
-    }),
-  );
-
-  server.registerTool(
     "publish_digest_page",
     {
       description:

@@ -127,6 +127,7 @@ model GenerationStep {
   @@index([jobId, status])
 }
 
+/// Legacy merged digest pages (pre–topic-board). New publishes use TopicPage.
 model PublishedPage {
   id            String      @id @default(cuid())
   title         String
@@ -143,6 +144,7 @@ model PublishedPage {
   stories   PublishedStory[]
 }
 
+/// Legacy story fingerprints linked to PublishedPage. New publishes use StoryIndex.
 model PublishedStory {
   id              String   @id @default(cuid())
   canonicalUrl    String?  @unique

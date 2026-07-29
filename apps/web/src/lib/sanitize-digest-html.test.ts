@@ -49,6 +49,24 @@ describe("sanitizeDigestHtml", () => {
     assert.doesNotMatch(html, /img/i);
     assert.doesNotMatch(html, /cdn\.test/);
   });
+
+  it("keeps board-story layout wrappers for side-by-side illustrations", () => {
+    const topicId = "cltopic1234567890";
+    const src = `/api/illustrations/${topicId}/photo.png`;
+    const html = sanitizeDigestHtml(
+      `<div class="board-story"><div class="board-story-text"><p><strong>Story</strong></p></div>` +
+        `<figure><img src="${src}"/><figcaption>Photo</figcaption></figure></div>`,
+      topicId,
+    );
+    assert.match(html, /class="board-story"/);
+    assert.match(html, /class="board-story-text"/);
+    assert.match(html, new RegExp(`src="${src}"`));
+  });
+
+  it("drops arbitrary div wrappers and their contents", () => {
+    const html = sanitizeDigestHtml('<div class="evil"><p>Story</p></div>');
+    assert.equal(html, "");
+  });
 });
 
 describe("stripLeadingTopicHeading", () => {

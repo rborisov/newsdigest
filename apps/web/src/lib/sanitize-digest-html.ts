@@ -1,6 +1,9 @@
 import { isAllowedBoardIllustrationSrc } from "./topic-illustrations";
 
+const ALLOWED_DIV_CLASSES = new Set(["board-story", "board-story-text"]);
+
 const ALLOWED_TAGS = new Set([
+  "div",
   "p",
   "a",
   "strong",
@@ -80,6 +83,13 @@ export function sanitizeDigestHtml(html: string, topicId?: string): string {
       if (src && isAllowedBoardIllustrationSrc(src, topicId)) {
         out += `<img src="${escapeAttr(src)}"/>`;
       }
+    } else if (tag === "div") {
+      const cls = extractClass(match[2] ?? "");
+      if (cls && ALLOWED_DIV_CLASSES.has(cls)) {
+        out += `<div class="${escapeAttr(cls)}">`;
+      } else if (!isClose) {
+        skippingUntil = "div";
+      }
     } else if (VOID_TAGS.has(tag) || full.endsWith("/>")) {
       out += `<${tag}/>`;
     } else {
@@ -142,6 +152,16 @@ function extractSrc(attrString: string): string | null {
     return null;
   }
   return (match[1] ?? match[2] ?? match[3] ?? "").trim() || null;
+}
+
+function extractClass(attrString: string): string | null {
+  const match = /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrString);
+  if (!match) {
+    return null;
+  }
+  const raw = (match[1] ?? match[2] ?? match[3] ?? "").trim();
+  const first = raw.split(/\s+/)[0]?.trim();
+  return first || null;
 }
 
 function escapeText(value: string): string {

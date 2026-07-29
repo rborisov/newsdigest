@@ -276,6 +276,51 @@ export async function enrichHtmlWithStoryIllustrations(
   return { html: dedupeStoryIllustrations(result), injected };
 }
 
+const FIGURE_BLOCK_CAPTURE = /<figure\b[^>]*>[\s\S]*?<\/figure>/i;
+
+/**
+ * Wrap each story paragraph + illustration in a flex row so CSS can place the
+ * image beside the text at matching height. Idempotent when already wrapped.
+ */
+export function layoutBoardStoryBlocks(html: string): string {
+  if (/\bclass=["']board-story["']/.test(html)) {
+    return html;
+  }
+
+  let result = "";
+  let cursor = 0;
+  const paragraphPattern = /<p\b[^>]*>[\s\S]*?<\/p>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = paragraphPattern.exec(html)) !== null) {
+    if (match.index == null) {
+      continue;
+    }
+
+    result += html.slice(cursor, match.index);
+    const paragraph = match[0];
+    const afterStart = match.index + paragraph.length;
+    const afterSlice = html.slice(afterStart);
+    const trailingFigure = /^\s*(<figure\b[^>]*>[\s\S]*?<\/figure>)/i.exec(afterSlice);
+    const embeddedFigure = FIGURE_BLOCK_CAPTURE.exec(paragraph);
+
+    if (trailingFigure || embeddedFigure) {
+      const figure = trailingFigure?.[1] ?? embeddedFigure![0];
+      const cleanParagraph = paragraph.replace(FIGURE_BLOCK_CAPTURE, "");
+      result += `<div class="board-story"><div class="board-story-text">${cleanParagraph}</div>${figure}</div>`;
+      cursor = trailingFigure ? afterStart + trailingFigure[0].length : afterStart;
+      paragraphPattern.lastIndex = cursor;
+      continue;
+    }
+
+    result += paragraph;
+    cursor = afterStart;
+  }
+
+  result += html.slice(cursor);
+  return result;
+}
+
 export function resolveIllustrationsRoot(): string {
   const explicit = process.env.ILLUSTRATIONS_DIR?.trim();
   if (explicit) {
@@ -532,6 +577,7 @@ export async function prepareBoardHtmlWithIllustrations(
   let boardHtml = replaceImgSources(html, replacements);
   boardHtml = boardHtml.replace(/<figure\b[^>]*>\s*<\/figure>/gi, "");
   boardHtml = dedupeStoryIllustrations(boardHtml);
+  boardHtml = layoutBoardStoryBlocks(boardHtml);
   return {
     html: boardHtml.trim(),
     attempted: externalUrls.length,

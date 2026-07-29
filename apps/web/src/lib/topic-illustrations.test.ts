@@ -11,6 +11,7 @@ import {
   extractOgImageFromHtml,
   illustrationPublicUrl,
   isAllowedBoardIllustrationSrc,
+  layoutBoardStoryBlocks,
   prepareBoardHtmlWithIllustrations,
   resolveIllustrationsRoot,
   stripIllustrationsForTelegraph,
@@ -156,5 +157,28 @@ describe("topic-illustrations", () => {
     assert.equal((deduped.match(/<figure\b/gi) ?? []).length, 1);
     assert.match(deduped, /One/);
     assert.doesNotMatch(deduped, /Two/);
+  });
+
+  it("wraps paragraph + trailing figure in a side-by-side board-story block", () => {
+    const html =
+      '<p><strong>Headline</strong> — summary.</p>' +
+      '<figure><img src="/api/illustrations/topic/a.jpg"/><figcaption>Photo</figcaption></figure>';
+    const laidOut = layoutBoardStoryBlocks(html);
+    assert.match(laidOut, /<div class="board-story"><div class="board-story-text">/);
+    assert.match(laidOut, /<\/div><figure>/);
+    assert.doesNotMatch(laidOut, /<figure>[\s\S]*<\/figure>\s*<\/p>/);
+  });
+
+  it("wraps paragraph with embedded figure and is idempotent", () => {
+    const html =
+      '<p><strong>Headline</strong><figure><img src="/api/illustrations/topic/a.jpg"/></figure></p>';
+    const laidOut = layoutBoardStoryBlocks(html);
+    assert.match(laidOut, /board-story-text/);
+    assert.equal(layoutBoardStoryBlocks(laidOut), laidOut);
+  });
+
+  it("leaves paragraphs without figures unchanged", () => {
+    const html = "<p>Plain story without illustration.</p><p>Another story.</p>";
+    assert.equal(layoutBoardStoryBlocks(html), html);
   });
 });

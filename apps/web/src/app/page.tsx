@@ -7,6 +7,7 @@ import { aboutFooterLinks } from "@/lib/about-page";
 import { auth } from "@/lib/auth";
 import { digestListTags, formatDigestWhen } from "@/lib/digest-display";
 import { prisma } from "@/lib/db";
+import { layoutBoardStoryBlocks } from "@/lib/topic-illustrations";
 import { sanitizeDigestHtml, stripLeadingTopicHeading } from "@/lib/sanitize-digest-html";
 import { loadTopicBoard } from "@/lib/topic-board";
 
@@ -108,7 +109,10 @@ export default async function HomePage() {
             <div className="board-list">
               {board.map((card) => {
                 const body = stripLeadingTopicHeading(
-                  sanitizeDigestHtml(card.htmlContent, card.topicId),
+                  sanitizeDigestHtml(
+                    layoutBoardStoryBlocks(card.htmlContent),
+                    card.topicId,
+                  ),
                   card.topicName,
                 );
                 return (

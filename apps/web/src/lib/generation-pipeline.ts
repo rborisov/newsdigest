@@ -6,7 +6,7 @@ import {
   type Topic,
 } from "@prisma/client";
 
-import { spawnAgent } from "./cursor";
+import { spawnAgent as defaultSpawnAgent } from "./cursor";
 import type { StoryFingerprint } from "./dedup";
 import { normalizeStoryFingerprints } from "./dedup";
 import { prisma as defaultPrisma } from "./db";
@@ -17,6 +17,7 @@ export type PipelineDeps = {
   prisma?: PrismaClient;
   now?: Date;
   spawnedBy?: string;
+  spawnAgent?: typeof defaultSpawnAgent;
 };
 
 function db(deps: PipelineDeps): PrismaClient {
@@ -156,7 +157,8 @@ export async function startStep(
     `starting step ${step.sortOrder} (topic_publish:${step.topicName}) → log ${jobLogPath(jobId, step.id)}`,
   );
 
-  const spawnResult = spawnAgent(prompt, jobId, step.id);
+  const spawn = deps.spawnAgent ?? defaultSpawnAgent;
+  const spawnResult = spawn(prompt, jobId, step.id);
   if (!spawnResult.ok) {
     await client.generationStep.update({
       where: { id: stepId },

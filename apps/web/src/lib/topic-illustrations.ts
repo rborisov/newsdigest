@@ -40,10 +40,6 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function resolveAbsoluteUrl(raw: string, baseUrl: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -133,17 +129,98 @@ async function fetchOgImageForStory(
   }
 }
 
-function paragraphHasFigureAfter(html: string, storyUrl: string): boolean {
+type StoryParagraphMatch = {
+  paragraph: string;
+  start: number;
+  end: number;
+  followingHtml: string;
+};
+
+/** Find a story <p> by normalized article URL (tracking params ignored). */
+export function findStoryParagraphMatch(
+  html: string,
+  storyUrl: string,
+): StoryParagraphMatch | null {
   const normalized = normalizeCanonicalUrl(storyUrl);
-  const pattern = new RegExp(
-    `<p\\b[^>]*>[\\s\\S]*?href\\s*=\\s*(?:"${escapeRegExp(normalized)}"|'${escapeRegExp(normalized)}'|${escapeRegExp(normalized)})[\\s\\S]*?<\\/p>\\s*(<figure[\\s\\S]*?<\\/figure>)?`,
-    "i",
-  );
-  const match = pattern.exec(html);
-  if (!match) {
+  const paragraphPattern = /<p\b[^>]*>[\s\S]*?<\/p>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = paragraphPattern.exec(html)) !== null) {
+    const paragraph = match[0];
+    for (const hrefMatch of paragraph.matchAll(
+      /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+    )) {
+      const href = normalizeCanonicalUrl(
+        (hrefMatch[1] ?? hrefMatch[2] ?? hrefMatch[3] ?? "").trim(),
+      );
+      if (href !== normalized) {
+        continue;
+      }
+
+      const start = match.index;
+      const end = start + paragraph.length;
+      return {
+        paragraph,
+        start,
+        end,
+        followingHtml: html.slice(end, end + 3000),
+      };
+    }
+  }
+
+  return null;
+}
+
+function storyAlreadyIllustrated(html: string, storyUrl: string): boolean {
+  const block = findStoryParagraphMatch(html, storyUrl);
+  if (!block) {
     return false;
   }
-  return Boolean(match[1]);
+  if (/<figure\b|<img\b/i.test(block.paragraph)) {
+    return true;
+  }
+  return /^\s*<figure\b/i.test(block.followingHtml);
+}
+
+/**
+ * Keep at most one illustration per story: drop extra <figure> blocks tied to
+ * the same article (common when the agent added one and the server injected og:image).
+ */
+export function dedupeStoryIllustrations(html: string): string {
+  const stories = parseStoriesFromHtml(html).filter((story) => story.canonicalUrl?.trim());
+  let result = html;
+
+  for (const story of stories) {
+    const storyUrl = story.canonicalUrl!.trim();
+    const block = findStoryParagraphMatch(result, storyUrl);
+    if (!block) {
+      continue;
+    }
+
+    const regionStart = block.start;
+    const tail = result.slice(block.end);
+    const nextBreak = tail.search(/<(?:p|h3)\b/i);
+    const regionEnd = nextBreak === -1 ? result.length : block.end + nextBreak;
+    const region = result.slice(regionStart, regionEnd);
+
+    const figures = [...region.matchAll(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi)];
+    if (figures.length <= 1) {
+      continue;
+    }
+
+    let kept = false;
+    const dedupedRegion = region.replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi, (figureHtml) => {
+      if (!kept) {
+        kept = true;
+        return figureHtml;
+      }
+      return "";
+    });
+
+    result = result.slice(0, regionStart) + dedupedRegion + result.slice(regionEnd);
+  }
+
+  return result.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function injectFigureAfterStoryParagraph(
@@ -152,21 +229,17 @@ function injectFigureAfterStoryParagraph(
   imageUrl: string,
   caption: string,
 ): string {
-  const normalized = normalizeCanonicalUrl(storyUrl);
-  const figure =
-    `<figure><img src="${imageUrl}"/><figcaption>${escapeHtml(caption)}</figcaption></figure>`;
-  const pattern = new RegExp(
-    `(<p\\b[^>]*>[\\s\\S]*?href\\s*=\\s*(?:"${escapeRegExp(normalized)}"|'${escapeRegExp(normalized)}'|${escapeRegExp(normalized)})[\\s\\S]*?<\\/p>)`,
-    "i",
-  );
-  if (!pattern.test(html)) {
+  const block = findStoryParagraphMatch(html, storyUrl);
+  if (!block) {
     return html;
   }
-  return html.replace(pattern, `$1${figure}`);
+
+  const figure =
+    `<figure><img src="${imageUrl}"/><figcaption>${escapeHtml(caption)}</figcaption></figure>`;
+  return `${html.slice(0, block.end)}${figure}${html.slice(block.end)}`;
 }
 
 /**
- * When the agent omitted images, fetch og:image (or twitter:image) from story pages
  * and inject <figure> blocks after matching story paragraphs.
  */
 export async function enrichHtmlWithStoryIllustrations(
@@ -184,7 +257,7 @@ export async function enrichHtmlWithStoryIllustrations(
 
   for (const story of stories) {
     const storyUrl = story.canonicalUrl!.trim();
-    if (paragraphHasFigureAfter(result, storyUrl)) {
+    if (storyAlreadyIllustrated(result, storyUrl)) {
       continue;
     }
 
@@ -200,7 +273,7 @@ export async function enrichHtmlWithStoryIllustrations(
     }
   }
 
-  return { html: result, injected };
+  return { html: dedupeStoryIllustrations(result), injected };
 }
 
 export function resolveIllustrationsRoot(): string {
@@ -458,6 +531,7 @@ export async function prepareBoardHtmlWithIllustrations(
 
   let boardHtml = replaceImgSources(html, replacements);
   boardHtml = boardHtml.replace(/<figure\b[^>]*>\s*<\/figure>/gi, "");
+  boardHtml = dedupeStoryIllustrations(boardHtml);
   return {
     html: boardHtml.trim(),
     attempted: externalUrls.length,

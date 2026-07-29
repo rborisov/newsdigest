@@ -6,6 +6,7 @@ import { afterEach, describe, it } from "node:test";
 
 import {
   clearTopicIllustrations,
+  dedupeStoryIllustrations,
   enrichHtmlWithStoryIllustrations,
   extractOgImageFromHtml,
   illustrationPublicUrl,
@@ -131,5 +132,29 @@ describe("topic-illustrations", () => {
     assert.equal(enriched.injected, 1);
     assert.match(enriched.html, /<figure><img src="https:\/\/cdn\.test\/hero\.jpg"\/>/);
     assert.match(enriched.html, /<figcaption>Kommersant<\/figcaption>/);
+  });
+
+  it("does not inject when the agent already added a figure inside the paragraph", async () => {
+    const fetchFn = (async () => {
+      throw new Error("fetch should not run");
+    }) as typeof fetch;
+
+    const html =
+      '<p><strong>Big launch</strong> — details. <a href="https://news.test/story-one">Kommersant</a><figure><img src="https://cdn.test/hero.jpg"/></figure></p>';
+    const enriched = await enrichHtmlWithStoryIllustrations(html, fetchFn);
+    assert.equal(enriched.injected, 0);
+    assert.equal(enriched.html, html);
+  });
+
+  it("dedupes duplicate figures for the same story", () => {
+    const html =
+      '<p><strong>Headline</strong> — summary. <a href="https://news.test/story-one">Source</a></p>' +
+      '<figure><img src="https://cdn.test/a.jpg"/><figcaption>One</figcaption></figure>' +
+      '<figure><img src="https://cdn.test/a.jpg"/><figcaption>Two</figcaption></figure>' +
+      '<p><strong>Next</strong> — more. <a href="https://news.test/story-two">Other</a></p>';
+    const deduped = dedupeStoryIllustrations(html);
+    assert.equal((deduped.match(/<figure\b/gi) ?? []).length, 1);
+    assert.match(deduped, /One/);
+    assert.doesNotMatch(deduped, /Two/);
   });
 });

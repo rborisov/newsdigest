@@ -111,8 +111,10 @@ wait "\$pid"
 code=\$?
 log_both "[\$(ts)] agent exited with code=\$code"
 
-# Delay so a successful MCP save/publish can commit before we mark abandoned.
-sleep 8
+# Delay so a successful MCP publish can commit before we mark abandoned.
+# Telegra.ph create + index update often finishes after the agent process exits
+# (Cursor frequently returns exit code 1 even after a successful tool call).
+sleep 25
 if [ -n "\$PORTAL" ] && [ -n "\$INTERNAL_KEY" ] && [ -n "\$JOB_ID" ]; then
   payload="{\\"jobId\\":\\"\$JOB_ID\\",\\"exitCode\\":\$code"
   if [ -n "\$STEP_ID" ]; then
@@ -120,7 +122,7 @@ if [ -n "\$PORTAL" ] && [ -n "\$INTERNAL_KEY" ] && [ -n "\$JOB_ID" ]; then
   fi
   payload="\$payload}"
   if command -v curl >/dev/null 2>&1; then
-    curl -sS -m 15 -X POST "\$PORTAL/api/internal/agent-exited" \\
+    curl -sS -m 60 -X POST "\$PORTAL/api/internal/agent-exited" \\
       -H "Content-Type: application/json" \\
       -H "x-internal-key: \$INTERNAL_KEY" \\
       -d "\$payload" >>"\$LOG" 2>&1 || true

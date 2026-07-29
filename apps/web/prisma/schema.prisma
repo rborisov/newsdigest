@@ -23,6 +23,7 @@ enum TriggerType {
 enum GenerationStepKind {
   topic_draft
   merge_publish
+  topic_publish
 }
 
 enum GenerationStepStatus {
@@ -40,6 +41,8 @@ model Topic {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  topicPages TopicPage[]
 }
 
 model Schedule {
@@ -55,10 +58,11 @@ model Schedule {
 }
 
 model PromptConfig {
-  id          String @id @default("default")
-  template    String
-  periodHours Int    @default(24)
-  updatedAt   DateTime @updatedAt
+  id             String @id @default("default")
+  template       String
+  periodHours    Int    @default(24)
+  boardStaleDays Int    @default(1)
+  updatedAt      DateTime @updatedAt
 }
 
 model TelegraphMeta {
@@ -85,6 +89,7 @@ model TelegraphIndexPage {
   previousIndex TelegraphIndexPage?  @relation("IndexChain", fields: [previousIndexId], references: [id])
   nextIndexes   TelegraphIndexPage[] @relation("IndexChain")
   publishedPages PublishedPage[]
+  topicPages    TopicPage[]
 }
 
 model GenerationJob {
@@ -98,6 +103,7 @@ model GenerationJob {
 
   schedule      Schedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   publishedPage PublishedPage?
+  topicPages    TopicPage[]
   steps         GenerationStep[]
 }
 
@@ -146,6 +152,43 @@ model PublishedStory {
   publishedPageId String
 
   publishedPage PublishedPage @relation(fields: [publishedPageId], references: [id], onDelete: Cascade)
+
+  @@index([titleKey])
+  @@index([firstSeenAt])
+}
+
+model TopicPage {
+  id            String      @id @default(cuid())
+  topicId       String?
+  topicName     String
+  title         String
+  telegraphPath String
+  telegraphUrl  String
+  indexPageId   String?
+  triggerType   TriggerType
+  triggeredBy   String
+  jobId         String?
+  stepId        String?     @unique
+  publishedAt   DateTime    @default(now())
+
+  topic     Topic?              @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  indexPage TelegraphIndexPage? @relation(fields: [indexPageId], references: [id], onDelete: SetNull)
+  job       GenerationJob?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  stories   StoryIndex[]
+
+  @@index([topicId, publishedAt])
+  @@index([publishedAt])
+}
+
+model StoryIndex {
+  id           String   @id @default(cuid())
+  topicPageId  String
+  canonicalUrl String?  @unique
+  title        String
+  titleKey     String?
+  firstSeenAt  DateTime @default(now())
+
+  topicPage TopicPage @relation(fields: [topicPageId], references: [id], onDelete: Cascade)
 
   @@index([titleKey])
   @@index([firstSeenAt])

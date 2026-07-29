@@ -51,6 +51,23 @@ type TelegraphMetaRow = {
   authorUrl: string;
 };
 
+type AboutPageRow = {
+  enabledEn: boolean;
+  enabledRu: boolean;
+  footerLabelEn: string;
+  footerLabelRu: string;
+  pageTitleEn: string;
+  pageTitleRu: string;
+  leadEn: string;
+  leadRu: string;
+  productEn: string;
+  productRu: string;
+  outlookEn: string;
+  outlookRu: string;
+  collaborationEn: string;
+  collaborationRu: string;
+};
+
 export type GenerationStepRow = {
   id: string;
   kind: string;
@@ -84,6 +101,7 @@ export type AdminInitialData = {
   topics: TopicRow[];
   schedules: ScheduleRow[];
   prompt: PromptConfigRow;
+  about: AboutPageRow;
   telegraph: TelegraphMetaRow;
   cursorApiKeyConfigured: boolean;
   jobs: GenerationJobRow[];
@@ -1337,6 +1355,184 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
   );
 }
 
+type AboutLocale = "en" | "ru";
+
+const ABOUT_LOCALE_TABS: { id: AboutLocale; label: string }[] = [
+  { id: "en", label: "English" },
+  { id: "ru", label: "Русский" },
+];
+
+function AboutSection({ initialAbout }: { initialAbout: AboutPageRow }) {
+  const router = useRouter();
+  const [locale, setLocale] = useState<AboutLocale>("en");
+  const [enabledEn, setEnabledEn] = useState(initialAbout.enabledEn);
+  const [enabledRu, setEnabledRu] = useState(initialAbout.enabledRu);
+  const [footerLabelEn, setFooterLabelEn] = useState(initialAbout.footerLabelEn);
+  const [footerLabelRu, setFooterLabelRu] = useState(initialAbout.footerLabelRu);
+  const [pageTitleEn, setPageTitleEn] = useState(initialAbout.pageTitleEn);
+  const [pageTitleRu, setPageTitleRu] = useState(initialAbout.pageTitleRu);
+  const [leadEn, setLeadEn] = useState(initialAbout.leadEn);
+  const [leadRu, setLeadRu] = useState(initialAbout.leadRu);
+  const [productEn, setProductEn] = useState(initialAbout.productEn);
+  const [productRu, setProductRu] = useState(initialAbout.productRu);
+  const [outlookEn, setOutlookEn] = useState(initialAbout.outlookEn);
+  const [outlookRu, setOutlookRu] = useState(initialAbout.outlookRu);
+  const [collaborationEn, setCollaborationEn] = useState(initialAbout.collaborationEn);
+  const [collaborationRu, setCollaborationRu] = useState(initialAbout.collaborationRu);
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [pending, setPending] = useState(false);
+
+  const localeTabStyle = (active: boolean) => ({
+    ...buttonStyle,
+    borderBottom: active ? "2px solid #222" : "2px solid transparent",
+    borderRadius: 0,
+    background: "transparent",
+    fontWeight: active ? 600 : 400,
+    color: active ? "#111" : "#666",
+  });
+
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setMessage(undefined);
+    setError(undefined);
+
+    const result = await adminFetch("/api/admin/about", {
+      method: "PATCH",
+      body: JSON.stringify({
+        enabledEn,
+        enabledRu,
+        footerLabelEn,
+        footerLabelRu,
+        pageTitleEn,
+        pageTitleRu,
+        leadEn,
+        leadRu,
+        productEn,
+        productRu,
+        outlookEn,
+        outlookRu,
+        collaborationEn,
+        collaborationRu,
+      }),
+    });
+
+    setPending(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    setMessage("About page saved.");
+    router.refresh();
+  }
+
+  const enabled = locale === "en" ? enabledEn : enabledRu;
+  const setEnabled = locale === "en" ? setEnabledEn : setEnabledRu;
+  const footerLabel = locale === "en" ? footerLabelEn : footerLabelRu;
+  const setFooterLabel = locale === "en" ? setFooterLabelEn : setFooterLabelRu;
+  const pageTitle = locale === "en" ? pageTitleEn : pageTitleRu;
+  const setPageTitle = locale === "en" ? setPageTitleEn : setPageTitleRu;
+  const lead = locale === "en" ? leadEn : leadRu;
+  const setLead = locale === "en" ? setLeadEn : setLeadRu;
+  const product = locale === "en" ? productEn : productRu;
+  const setProduct = locale === "en" ? setProductEn : setProductRu;
+  const outlook = locale === "en" ? outlookEn : outlookRu;
+  const setOutlook = locale === "en" ? setOutlookEn : setOutlookRu;
+  const collaboration = locale === "en" ? collaborationEn : collaborationRu;
+  const setCollaboration = locale === "en" ? setCollaborationEn : setCollaborationRu;
+
+  return (
+    <section style={sectionStyle}>
+      <h2 style={headingStyle}>About</h2>
+      <p style={messageStyle}>
+        Public About / Collaboration page at <code>/about</code>. Markdown supported in body fields.
+      </p>
+
+      <nav
+        aria-label="About locales"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.25rem 0.5rem",
+          borderBottom: "1px solid var(--line, #ddd)",
+          marginTop: "1rem",
+          marginBottom: "1rem",
+        }}
+      >
+        {ABOUT_LOCALE_TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            style={localeTabStyle(locale === item.id)}
+            aria-current={locale === item.id ? "true" : undefined}
+            onClick={() => setLocale(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <label style={{ ...fieldStyle, flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
+          <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+          Enabled
+        </label>
+        <label style={fieldStyle}>
+          Footer label
+          <input value={footerLabel} onChange={(event) => setFooterLabel(event.target.value)} style={inputStyle} />
+        </label>
+        <label style={fieldStyle}>
+          Page title
+          <input value={pageTitle} onChange={(event) => setPageTitle(event.target.value)} style={inputStyle} />
+        </label>
+        <label style={fieldStyle}>
+          Lead
+          <textarea
+            rows={3}
+            value={lead}
+            onChange={(event) => setLead(event.target.value)}
+            style={{ ...inputStyle, width: "100%" }}
+          />
+        </label>
+        <label style={fieldStyle}>
+          Product (Markdown)
+          <textarea
+            rows={8}
+            value={product}
+            onChange={(event) => setProduct(event.target.value)}
+            style={{ ...inputStyle, fontFamily: "monospace", width: "100%" }}
+          />
+        </label>
+        <label style={fieldStyle}>
+          Outlook (Markdown)
+          <textarea
+            rows={8}
+            value={outlook}
+            onChange={(event) => setOutlook(event.target.value)}
+            style={{ ...inputStyle, fontFamily: "monospace", width: "100%" }}
+          />
+        </label>
+        <label style={fieldStyle}>
+          Collaboration (Markdown)
+          <textarea
+            rows={8}
+            value={collaboration}
+            onChange={(event) => setCollaboration(event.target.value)}
+            style={{ ...inputStyle, fontFamily: "monospace", width: "100%" }}
+          />
+        </label>
+        <button type="submit" disabled={pending} style={{ ...buttonStyle, alignSelf: "start" }}>
+          Save about page
+        </button>
+      </form>
+
+      <StatusMessage message={message} error={error} />
+    </section>
+  );
+}
+
 function KeysSection({
   initialTelegraph,
   cursorApiKeyConfigured,
@@ -1445,6 +1641,7 @@ const ADMIN_TABS = [
   { id: "jobs", label: "Jobs" },
   { id: "people", label: "People" },
   { id: "content", label: "Prompt & topics" },
+  { id: "about", label: "About" },
   { id: "keys", label: "API keys" },
 ] as const;
 
@@ -1529,6 +1726,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
           <SchedulesSection initialSchedules={data.schedules} />
         </>
       ) : null}
+      {tab === "about" ? <AboutSection initialAbout={data.about} /> : null}
       {tab === "keys" ? (
         <KeysSection
           initialTelegraph={data.telegraph}

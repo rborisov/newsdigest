@@ -1,7 +1,9 @@
 import Link from "next/link";
 
 import { SignOutButton } from "@/app/sign-out-button";
+import { SiteFooter } from "@/app/site-footer";
 import { SiteHeader } from "@/app/site-header";
+import { aboutFooterLinks } from "@/lib/about-page";
 import { auth } from "@/lib/auth";
 import { digestListTags, formatDigestWhen } from "@/lib/digest-display";
 import { prisma } from "@/lib/db";
@@ -9,9 +11,10 @@ import { sanitizeDigestHtml, stripLeadingTopicHeading } from "@/lib/sanitize-dig
 import { loadTopicBoard } from "@/lib/topic-board";
 
 export default async function HomePage() {
-  const [session, { board, sidebar, indexUrl, displayTimezone }] = await Promise.all([
+  const [session, { board, sidebar, indexUrl, displayTimezone }, about] = await Promise.all([
     auth(),
     loadTopicBoard(prisma),
+    prisma.aboutPage.findUnique({ where: { id: "default" } }),
   ]);
 
   const isSignedIn = Boolean(session?.user?.email);
@@ -144,6 +147,8 @@ export default async function HomePage() {
           ) : null}
         </section>
       </div>
+
+      <SiteFooter links={about ? aboutFooterLinks(about) : []} />
     </main>
   );
 }

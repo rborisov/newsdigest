@@ -271,3 +271,22 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
+model AboutPage {
+  id                 String   @id @default("default")
+  enabledEn          Boolean  @default(true)
+  enabledRu          Boolean  @default(true)
+  footerLabelEn      String   @default("About / Collaboration")
+  footerLabelRu      String   @default("О продукте / Сотрудничество")
+  pageTitleEn        String   @default("")
+  pageTitleRu        String   @default("")
+  leadEn             String   @default("")
+  leadRu             String   @default("")
+  productEn          String   @default("")
+  productRu          String   @default("")
+  outlookEn          String   @default("")
+  outlookRu          String   @default("")
+  collaborationEn    String   @default("")
+  collaborationRu    String   @default("")
+  updatedAt          DateTime @updatedAt
+}

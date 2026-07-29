@@ -457,6 +457,118 @@ form:has(> .nav-link) {
   margin-top: 1rem;
 }
 
+.site-footer {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.site-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
+}
+
+.footer-link {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.footer-link:hover {
+  color: var(--ink-soft);
+}
+
+.about-lang-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: -1rem 0 1.5rem;
+}
+
+.about-lang-switch a {
+  display: inline-flex;
+  align-items: center;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-solid);
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.about-lang-switch a:hover {
+  border-color: rgba(13, 148, 136, 0.45);
+  color: var(--ink);
+}
+
+.about-article h1 {
+  font-family: var(--font-display);
+  font-size: clamp(1.85rem, 4vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.75rem;
+}
+
+.about-lead {
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+  line-height: 1.5;
+  max-width: 40rem;
+  margin-bottom: 1.5rem;
+}
+
+.about-section + .about-section {
+  margin-top: 1.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.about-section h2 {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+  font-weight: 700;
+}
+
+.about-body {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.about-body > *:first-child {
+  margin-top: 0;
+}
+
+.about-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.about-body p,
+.about-body ul,
+.about-body ol {
+  margin: 0.55rem 0;
+}
+
+.about-body ul,
+.about-body ol {
+  padding-left: 1.25rem;
+}
+
+.about-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 @keyframes rise {
   from {
     opacity: 0;

@@ -8,7 +8,7 @@ export default async function AdminPage() {
 
   await syncScheduleHumanFieldsFromCron();
 
-  const [users, topics, schedules, prompt, telegraph, jobs] = await Promise.all([
+  const [users, topics, schedules, prompt, telegraph, about, jobs] = await Promise.all([
     prisma.allowedUser.findMany({
       orderBy: [{ isAdmin: "desc" }, { email: "asc" }],
       select: { id: true, email: true, isAdmin: true },
@@ -57,6 +57,25 @@ export default async function AdminPage() {
         authorUrl: true,
       },
     }),
+    prisma.aboutPage.findUnique({
+      where: { id: "default" },
+      select: {
+        enabledEn: true,
+        enabledRu: true,
+        footerLabelEn: true,
+        footerLabelRu: true,
+        pageTitleEn: true,
+        pageTitleRu: true,
+        leadEn: true,
+        leadRu: true,
+        productEn: true,
+        productRu: true,
+        outlookEn: true,
+        outlookRu: true,
+        collaborationEn: true,
+        collaborationRu: true,
+      },
+    }),
     prisma.generationJob.findMany({
       orderBy: { createdAt: "desc" },
       take: 20,
@@ -86,8 +105,8 @@ export default async function AdminPage() {
     }),
   ]);
 
-  if (!prompt || !telegraph) {
-    throw new Error("Default prompt or telegraph config is missing. Run db:seed.");
+  if (!prompt || !telegraph || !about) {
+    throw new Error("Default prompt, telegraph, or about config is missing. Run db:seed.");
   }
 
   return (
@@ -98,6 +117,7 @@ export default async function AdminPage() {
         topics,
         schedules,
         prompt,
+        about,
         telegraph: {
           accessTokenConfigured: telegraph.accessToken.trim().length > 0,
           authorName: telegraph.authorName,

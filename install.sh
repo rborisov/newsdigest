@@ -18,6 +18,10 @@ WORKER_UNIT=/etc/systemd/system/newsdigest-worker.service
 SWAPFILE=/swapfile
 SWAP_SIZE_GB=2
 
+ensure_data_dirs() {
+  mkdir -p "${DATA_DIR}/logs" "${DATA_DIR}/illustrations"
+}
+
 DOMAIN=""
 LE_EMAIL=""
 ALLOWED_EMAILS=""
@@ -383,7 +387,7 @@ prompt_config() {
 write_env() {
   local env_file="${INSTALL_ROOT}/.env"
   log "Writing ${env_file}"
-  mkdir -p "${DATA_DIR}"
+  ensure_data_dirs
   cat > "${env_file}" <<EOF
 # managed-by: newsdigest-install (host / systemd — no Docker)
 DOMAIN=${DOMAIN}
@@ -411,6 +415,7 @@ TELEGRAPH_ACCESS_TOKEN=${TELEGRAPH_ACCESS_TOKEN}
 # Absolute SQLite path (host)
 DATABASE_URL=file:${DATA_DIR}/digest.db
 JOB_LOG_DIR=${DATA_DIR}/logs
+ILLUSTRATIONS_DIR=${DATA_DIR}/illustrations
 
 # Worker → portal
 PORTAL_URL=http://127.0.0.1:3000
@@ -597,7 +602,8 @@ prepare_standalone() {
 install_app() {
   log "Building application in ${BUILD_ROOT}"
   cd "${BUILD_ROOT}" || die "Cannot cd to ${BUILD_ROOT}"
-  mkdir -p "${DATA_DIR}" "${WORKSPACE_DIR}"
+  ensure_data_dirs
+  mkdir -p "${WORKSPACE_DIR}"
 
   export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
   # Point Prisma at the runtime DB while building/seeding
@@ -778,7 +784,8 @@ main() {
   stop_docker_stack_if_present
   stop_host_services
 
-  mkdir -p "${INSTALL_ROOT}" "${DATA_DIR}" "${WORKSPACE_DIR}"
+  mkdir -p "${INSTALL_ROOT}" "${WORKSPACE_DIR}"
+  ensure_data_dirs
 
   if [[ "${RECONFIGURE}" -eq 1 ]]; then
     load_env_defaults

@@ -218,7 +218,7 @@ Requirements:
 7. **Generate now** — confirm a job starts (requires CLI + MCP configured on the host or in-container).
 8. After a successful run, Telegra.ph shows one page per topic and the portal index updates; the home topic board reflects fresh publishes within the stale window.
 
-Backup the `digest-data` Docker volume regularly on VPS deployments.
+Backup `/opt/newsdigest/data` on VPS host installs (SQLite DB, job logs, and board illustrations under `data/illustrations/`). For Docker, backup the `digest-data` volume regularly.
 
 ## Status
 

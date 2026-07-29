@@ -9,6 +9,8 @@ services:
       - .env
     environment:
       DATABASE_URL: file:/app/data/digest.db
+      JOB_LOG_DIR: /app/data/logs
+      ILLUSTRATIONS_DIR: /app/data/illustrations
     volumes:
       - digest-data:/app/data
     restart: unless-stopped

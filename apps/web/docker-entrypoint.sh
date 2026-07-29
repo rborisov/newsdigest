@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-mkdir -p /app/data
+mkdir -p /app/data/logs /app/data/illustrations
 
 echo "[web] applying Prisma schema..."
 prisma db push --schema=/app/apps/web/prisma/schema.prisma --skip-generate

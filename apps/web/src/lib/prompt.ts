@@ -116,6 +116,7 @@ export function appendTopicPublishMetadata(
     "- Separate stories with their own <p> tags (never glue headlines together)",
     "- Include a portal-only illustration for the lead story when its article page has og:image or a clear hero photo (required when available):",
     "  <figure><img src=\"https://...\"/><figcaption>Short caption</figcaption></figure>",
+    "- Place each <figure> immediately AFTER the story </p> (not inside the paragraph); at most one figure per story",
     "- You may add up to one more illustration for a second story when a strong photo exists",
     "- Prefer og:image / twitter:image from the article; skip logos, icons, ads, and stock fillers",
     "- Only use real image URLs you found; do not invent URLs. Images appear on the portal board only (stripped from Telegra.ph)",

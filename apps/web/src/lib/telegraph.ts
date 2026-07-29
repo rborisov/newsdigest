@@ -854,6 +854,7 @@ export async function publishDigest(
       topicId: input.topicId ?? null,
       topicName: input.topicName,
       title: input.title,
+      htmlContent: input.html,
       telegraphPath: digest.path,
       telegraphUrl: digest.url,
       triggerType: input.triggerType,

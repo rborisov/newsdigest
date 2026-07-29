@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
+import { sanitizeDigestHtml } from "./sanitize-digest-html";
+
+describe("sanitizeDigestHtml", () => {
+  it("keeps telegraph-compatible markup and safe links", () => {
+    const html = sanitizeDigestHtml(
+      '<h3>Topic</h3><p>Read <a href="https://example.com/x">Source</a>.</p><hr/>',
+    );
+    assert.match(html, /<h3>Topic<\/h3>/);
+    assert.match(html, /href="https:\/\/example\.com\/x"/);
+    assert.match(html, /rel="noopener noreferrer"/);
+  });
+
+  it("strips scripts and event handlers", () => {
+    const html = sanitizeDigestHtml(
+      '<p onclick="alert(1)">Hi</p><script>alert(2)</script><p>Ok</p>',
+    );
+    assert.doesNotMatch(html, /script/i);
+    assert.doesNotMatch(html, /onclick/i);
+    assert.doesNotMatch(html, /alert\(2\)/);
+    assert.match(html, /<p>Hi<\/p>/);
+    assert.match(html, /<p>Ok<\/p>/);
+  });
+
+  it("drops javascript hrefs", () => {
+    const html = sanitizeDigestHtml('<a href="javascript:alert(1)">x</a>');
+    assert.doesNotMatch(html, /javascript:/i);
+    assert.match(html, /<a>x<\/a>/);
+  });
+});

@@ -12,9 +12,9 @@ describe("selectBoardPages", () => {
   it("keeps latest in-window page per topic", () => {
     const board = selectBoardPages(
       [
-        { id: "p1", topicId: "t1", topicName: "AI", title: "A1", telegraphUrl: "u1", publishedAt: new Date("2026-07-29T10:00:00Z"), storyTitles: ["s"] },
-        { id: "p0", topicId: "t1", topicName: "AI", title: "A0", telegraphUrl: "u0", publishedAt: new Date("2026-07-28T10:00:00Z"), storyTitles: [] },
-        { id: "p2", topicId: "t2", topicName: "Ops", title: "O", telegraphUrl: "u2", publishedAt: new Date("2026-07-29T09:00:00Z"), storyTitles: [] },
+        { id: "p1", topicId: "t1", topicName: "AI", title: "A1", telegraphUrl: "u1", publishedAt: new Date("2026-07-29T10:00:00Z"), storyTitles: ["s"], htmlContent: "<p>one</p>" },
+        { id: "p0", topicId: "t1", topicName: "AI", title: "A0", telegraphUrl: "u0", publishedAt: new Date("2026-07-28T10:00:00Z"), storyTitles: [], htmlContent: "" },
+        { id: "p2", topicId: "t2", topicName: "Ops", title: "O", telegraphUrl: "u2", publishedAt: new Date("2026-07-29T09:00:00Z"), storyTitles: [], htmlContent: "<p>ops</p>" },
       ],
       topics,
       1,
@@ -27,7 +27,7 @@ describe("selectBoardPages", () => {
 
   it("drops topics whose latest page is outside stale window", () => {
     const board = selectBoardPages(
-      [{ id: "p0", topicId: "t1", topicName: "AI", title: "Old", telegraphUrl: "u", publishedAt: new Date("2026-07-27T12:00:00Z"), storyTitles: [] }],
+      [{ id: "p0", topicId: "t1", topicName: "AI", title: "Old", telegraphUrl: "u", publishedAt: new Date("2026-07-27T12:00:00Z"), storyTitles: [], htmlContent: "" }],
       topics,
       1,
       now,

@@ -164,6 +164,8 @@ model TopicPage {
   topicId       String?
   topicName     String
   title         String
+  /// Digest body HTML for the home board (same content published to Telegra.ph).
+  htmlContent   String      @default("")
   telegraphPath String
   telegraphUrl  String
   indexPageId   String?

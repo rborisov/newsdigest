@@ -8,6 +8,7 @@ export type BoardCard = {
   telegraphUrl: string;
   publishedAt: Date;
   storyTitles: string[];
+  htmlContent: string;
 };
 
 export type SidebarItem = {
@@ -27,6 +28,7 @@ type BoardPageInput = {
   telegraphUrl: string;
   publishedAt: Date;
   storyTitles: string[];
+  htmlContent: string;
 };
 
 type TopicInput = {
@@ -80,6 +82,7 @@ export function selectBoardPages(
       telegraphUrl: latest.telegraphUrl,
       publishedAt: latest.publishedAt,
       storyTitles: latest.storyTitles,
+      htmlContent: latest.htmlContent,
     });
   }
 
@@ -100,6 +103,7 @@ export async function loadTopicBoard(
     title: true,
     telegraphUrl: true,
     publishedAt: true,
+    htmlContent: true,
     stories: {
       take: 6,
       orderBy: { firstSeenAt: "asc" as const },
@@ -121,7 +125,18 @@ export async function loadTopicBoard(
     prisma.topicPage.findMany({
       orderBy: { publishedAt: "desc" },
       take: 24,
-      select: pageSelect,
+      select: {
+        id: true,
+        topicName: true,
+        title: true,
+        telegraphUrl: true,
+        publishedAt: true,
+        stories: {
+          take: 6,
+          orderBy: { firstSeenAt: "asc" as const },
+          select: { title: true },
+        },
+      },
     }),
   ]);
 
@@ -133,6 +148,7 @@ export async function loadTopicBoard(
     telegraphUrl: page.telegraphUrl,
     publishedAt: page.publishedAt,
     storyTitles: page.stories.map((story) => story.title),
+    htmlContent: page.htmlContent,
   });
 
   const board = selectBoardPages(

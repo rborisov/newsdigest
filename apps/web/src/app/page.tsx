@@ -5,6 +5,7 @@ import { SiteHeader } from "@/app/site-header";
 import { auth } from "@/lib/auth";
 import { digestListTags, formatDigestWhen } from "@/lib/digest-display";
 import { prisma } from "@/lib/db";
+import { sanitizeDigestHtml } from "@/lib/sanitize-digest-html";
 import { loadTopicBoard } from "@/lib/topic-board";
 
 export default async function HomePage() {
@@ -101,43 +102,39 @@ export default async function HomePage() {
           {board.length === 0 ? (
             <p className="muted">No topics on the board yet.</p>
           ) : (
-            <ul className="board-list">
+            <div className="board-list">
               {board.map((card) => {
-                const tags = digestListTags({
-                  title: card.title,
-                  storyTitles: card.storyTitles,
-                });
+                const body = sanitizeDigestHtml(card.htmlContent);
                 return (
-                  <li key={card.topicId}>
-                    <article className="board-card">
-                      <div className="board-card-header">
-                        <h3 className="board-topic">{card.topicName}</h3>
-                        <time className="digest-time" dateTime={card.publishedAt.toISOString()}>
-                          {formatDigestWhen(card.publishedAt)}
-                        </time>
-                      </div>
-                      {tags.length > 0 ? (
-                        <div className="tag-row">
-                          {tags.map((tag) => (
-                            <span key={tag} className="tag">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                      <a
-                        className="board-link"
-                        href={card.telegraphUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Read on Telegra.ph →
-                      </a>
-                    </article>
-                  </li>
+                  <article key={card.topicId} className="board-card">
+                    <div className="board-card-header">
+                      <h3 className="board-topic">{card.topicName}</h3>
+                      <time className="digest-time" dateTime={card.publishedAt.toISOString()}>
+                        {formatDigestWhen(card.publishedAt)}
+                      </time>
+                    </div>
+                    {body ? (
+                      <div
+                        className="board-body"
+                        dangerouslySetInnerHTML={{ __html: body }}
+                      />
+                    ) : (
+                      <p className="muted">
+                        Body not stored for this page yet — open on Telegra.ph.
+                      </p>
+                    )}
+                    <a
+                      className="board-link"
+                      href={card.telegraphUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open on Telegra.ph →
+                    </a>
+                  </article>
                 );
               })}
-            </ul>
+            </div>
           )}
           {!indexUrl ? (
             <p className="muted board-index-fallback">No index published yet.</p>

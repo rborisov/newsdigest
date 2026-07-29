@@ -351,48 +351,102 @@ form:has(> .nav-link) {
 
 .board-list {
   list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-  gap: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 .board-card {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  padding: 1rem 1.05rem;
+  gap: 0.85rem;
+  padding: 1.15rem 1.2rem 1.2rem;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: var(--surface-solid);
-  height: 100%;
-  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .board-card:hover {
-  border-color: rgba(13, 148, 136, 0.45);
-  transform: translateY(-1px);
-  box-shadow: 0 10px 28px rgba(15, 39, 68, 0.07);
+  border-color: rgba(13, 148, 136, 0.35);
 }
 
 .board-card-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
 }
 
 .board-topic {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1.25rem;
   letter-spacing: -0.02em;
   line-height: 1.25;
 }
 
+.board-body {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.board-body > *:first-child {
+  margin-top: 0;
+}
+
+.board-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.board-body h3,
+.board-body h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 1rem 0 0.45rem;
+  line-height: 1.3;
+}
+
+.board-body h3 {
+  font-size: 1.05rem;
+}
+
+.board-body h4 {
+  font-size: 1rem;
+}
+
+.board-body p,
+.board-body ul,
+.board-body ol,
+.board-body blockquote {
+  margin: 0.55rem 0;
+}
+
+.board-body ul,
+.board-body ol {
+  padding-left: 1.25rem;
+}
+
+.board-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.board-body hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0.9rem 0;
+}
+
 .board-link {
-  margin-top: auto;
+  margin-top: 0.15rem;
   color: var(--accent);
   font-weight: 600;
   font-size: 0.9rem;
+  align-self: flex-start;
 }
 
 .board-link:hover {

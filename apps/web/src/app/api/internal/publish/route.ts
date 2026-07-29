@@ -324,14 +324,12 @@ export async function POST(request: Request) {
   const otherInProgressPublish = await prisma.topicPage.findFirst({
     where: {
       indexPageId: null,
-      ...(stepId
-        ? { NOT: { stepId } }
-        : {
-            NOT: {
-              jobId,
-              topicName,
-            },
-          }),
+      job: {
+        id: { not: jobId },
+        status: {
+          in: [GenerationJobStatus.running, GenerationJobStatus.pending],
+        },
+      },
     },
     select: { id: true, jobId: true },
   });

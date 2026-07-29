@@ -182,7 +182,19 @@ Headless spawn uses `-p --force --sandbox disabled --trust --approve-mcps` so fe
 
 **Home page (topic board):** the main area shows the latest digest per enabled topic within the **board stale window** (`boardStaleDays` in admin prompt settings, default 1 day). The sidebar lists recent topic digests (newest first) with links to Telegra.ph. Article HTML lives on Telegra.ph only; the portal stores metadata in `TopicPage` and `StoryIndex`.
 
-**Legacy models:** `PublishedPage` / `PublishedStory` remain in the schema for old merged digests and idempotent publish on pre-migration jobs. New publishes write `TopicPage` / `StoryIndex`. Run `npm run backfill:topic-pages --workspace=web` once after upgrade to migrate old pages.
+**Legacy models:** `PublishedPage` / `PublishedStory` remain in the schema for old merged digests and idempotent publish on pre-migration jobs. New publishes write `TopicPage` / `StoryIndex`.
+
+### Upgrade notes (topic board)
+
+After installing or updating to a build that includes the topic-board home page:
+
+1. **Wait for in-flight jobs** — cancel or let finish any running/pending per-topic generation jobs (Option C pipeline) before deploying. A mid-publish deploy can leave orphan `TopicPage` rows; the portal resumes same-step orphans automatically, but overlapping deploys are safer to avoid.
+2. **Backfill legacy pages** — run once after schema is applied:
+   ```bash
+   npm run backfill:topic-pages --workspace=web
+   ```
+   Idempotent on `telegraphUrl`. Re-run after updates if you skipped it on a prior deploy.
+3. **Seed behavior** — `db:seed` upserts admins and default config; it does not re-run backfill. Fresh Docker boots run `db push` + seed only — run backfill manually on upgraded databases with existing `PublishedPage` rows.
 
 | Mode | When to use | Setup |
 |------|-------------|--------|

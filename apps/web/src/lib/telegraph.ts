@@ -93,6 +93,32 @@ export type IndexPageKind = "topic" | "published";
 
 export type IndexUpdateAction = "create_first" | "edit" | "rotate";
 
+export type IndexAssemblyPage = {
+  id: string;
+  title: string;
+  telegraphUrl: string;
+  publishedAt: Date;
+  stories?: { title: string }[];
+  storyTitles?: string[];
+};
+
+/** Merge legacy PublishedPage and TopicPage index rows; prefer TopicPage on duplicate telegraphUrl. */
+export function mergeIndexPagesForAssembly(
+  publishedPages: IndexAssemblyPage[],
+  topicPages: IndexAssemblyPage[],
+): IndexAssemblyPage[] {
+  const byUrl = new Map<string, IndexAssemblyPage>();
+  for (const page of publishedPages) {
+    byUrl.set(page.telegraphUrl, page);
+  }
+  for (const page of topicPages) {
+    byUrl.set(page.telegraphUrl, page);
+  }
+  return Array.from(byUrl.values()).sort(
+    (left, right) => right.publishedAt.getTime() - left.publishedAt.getTime(),
+  );
+}
+
 type TelegraphPageResult = {
   path: string;
   url: string;
@@ -555,16 +581,22 @@ async function updateIndexAfterPublishUnlocked(
 
   const newDigestLink = toIndexLink(params.digestPage);
 
-  const indexedPages = [
-    ...(currentIndex?.publishedPages.map((page) => ({
+  const indexedPages = mergeIndexPagesForAssembly(
+    (currentIndex?.publishedPages ?? []).map((page) => ({
       id: page.id,
       title: page.title,
       telegraphUrl: page.telegraphUrl,
       publishedAt: page.createdAt,
       stories: page.stories,
-    })) ?? []),
-    ...(currentIndex?.topicPages ?? []),
-  ].sort((left, right) => right.publishedAt.getTime() - left.publishedAt.getTime());
+    })),
+    (currentIndex?.topicPages ?? []).map((page) => ({
+      id: page.id,
+      title: page.title,
+      telegraphUrl: page.telegraphUrl,
+      publishedAt: page.publishedAt,
+      stories: page.stories,
+    })),
+  );
 
   const existingLinks: IndexDigestLink[] = indexedPages
     .filter((page) => page.id !== params.digestPage.id)

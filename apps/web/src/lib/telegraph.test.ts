@@ -8,6 +8,7 @@ import {
   decideIndexUpdateAction,
   estimateSize,
   htmlToTelegraphNodes,
+  mergeIndexPagesForAssembly,
   sanitizeAuthorUrl,
   withIndexUpdateLock,
 } from "./telegraph";
@@ -152,6 +153,41 @@ describe("telegraph", () => {
 
       assert.equal(decideIndexUpdateAction(true, html), "rotate");
       assert.ok(estimateSize(htmlToTelegraphNodes(html)) > INDEX_SOFT_LIMIT_BYTES);
+    });
+  });
+
+  describe("mergeIndexPagesForAssembly", () => {
+    it("dedupes by telegraphUrl and prefers TopicPage over PublishedPage", () => {
+      const sharedUrl = "https://telegra.ph/Daily-Digest-07-28";
+      const merged = mergeIndexPagesForAssembly(
+        [
+          {
+            id: "legacy_1",
+            title: "Legacy title",
+            telegraphUrl: sharedUrl,
+            publishedAt: new Date("2026-07-28T10:00:00Z"),
+          },
+          {
+            id: "legacy_2",
+            title: "Other legacy",
+            telegraphUrl: "https://telegra.ph/Other",
+            publishedAt: new Date("2026-07-27T10:00:00Z"),
+          },
+        ],
+        [
+          {
+            id: "topic_1",
+            title: "Topic title",
+            telegraphUrl: sharedUrl,
+            publishedAt: new Date("2026-07-28T12:00:00Z"),
+          },
+        ],
+      );
+
+      assert.equal(merged.length, 2);
+      assert.equal(merged[0]?.id, "topic_1");
+      assert.equal(merged[0]?.title, "Topic title");
+      assert.equal(merged[1]?.id, "legacy_2");
     });
   });
 

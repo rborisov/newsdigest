@@ -44,7 +44,7 @@ function createServer(): McpServer {
     "publish_digest_page",
     {
       description:
-        "Publish a single-topic news digest HTML page to Telegra.ph via the portal internal API. Call once per topic_publish step with that topic's HTML only.",
+        "Publish a single-topic news digest HTML page to Telegra.ph via the portal internal API. Call once per topic_publish step with that topic's HTML only. Optional <figure><img> illustrations render on the portal home board only (stripped from Telegra.ph).",
       inputSchema: {
         jobId: z.string().min(1).describe("Generation job ID from the agent prompt"),
         stepId: z.string().optional().describe("Generation step ID for this topic publish"),

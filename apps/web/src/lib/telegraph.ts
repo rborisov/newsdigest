@@ -2,6 +2,11 @@ import { PrismaClient, TriggerType } from "@prisma/client";
 
 import { formatIndexLinkLabel } from "./digest-display";
 import { prisma as defaultPrisma } from "./db";
+import {
+  clearTopicIllustrations,
+  prepareBoardHtmlWithIllustrations,
+  stripIllustrationsForTelegraph,
+} from "./topic-illustrations";
 
 export const INDEX_SOFT_LIMIT_BYTES = 55_000;
 export const INDEX_PAGE_TITLE = "n. digests";
@@ -847,10 +852,24 @@ export async function publishDigest(
   const accessToken = await resolveAccessToken(db);
   const { authorName, authorUrl } = await loadAuthorFields(db);
 
+  const topicId = input.topicId?.trim() || null;
+  let telegraphHtml = stripIllustrationsForTelegraph(input.html);
+  let boardHtml = telegraphHtml;
+
+  if (topicId) {
+    await clearTopicIllustrations(topicId);
+    boardHtml = await prepareBoardHtmlWithIllustrations(
+      topicId,
+      input.html,
+      fetchFn ?? fetch,
+    );
+    telegraphHtml = stripIllustrationsForTelegraph(boardHtml);
+  }
+
   const digest = await createPage({
     accessToken,
     title: input.title,
-    content: input.html,
+    content: telegraphHtml,
     authorName,
     authorUrl,
     fetchFn,
@@ -858,10 +877,10 @@ export async function publishDigest(
 
   const topicPage = await db.topicPage.create({
     data: {
-      topicId: input.topicId ?? null,
+      topicId,
       topicName: input.topicName,
       title: input.title,
-      htmlContent: input.html,
+      htmlContent: boardHtml,
       telegraphPath: digest.path,
       telegraphUrl: digest.url,
       triggerType: input.triggerType,

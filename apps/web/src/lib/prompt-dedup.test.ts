@@ -178,6 +178,8 @@ describe("prompt", () => {
       assert.match(prompt, /timezone Europe\/Moscow/);
       assert.match(prompt, /Output language: Russian/);
       assert.match(prompt, /Write the digest body in Russian/);
+      assert.match(prompt, /portal home board only/);
+      assert.match(prompt, /<figure><img/);
     });
   });
 });

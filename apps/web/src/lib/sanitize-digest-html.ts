@@ -1,3 +1,5 @@
+import { isAllowedBoardIllustrationSrc } from "./topic-illustrations";
+
 const ALLOWED_TAGS = new Set([
   "p",
   "a",
@@ -15,15 +17,19 @@ const ALLOWED_TAGS = new Set([
   "ol",
   "li",
   "blockquote",
+  "figure",
+  "figcaption",
+  "img",
 ]);
 
-const VOID_TAGS = new Set(["br", "hr"]);
+const VOID_TAGS = new Set(["br", "hr", "img"]);
 
 /**
  * Allowlist-sanitize digest HTML for safe home-board rendering.
  * Keeps Telegraph-compatible tags; strips scripts/events; allows http(s)/mailto hrefs on <a>.
+ * Illustration <img> tags must point at portal-hosted /api/illustrations/ URLs only.
  */
-export function sanitizeDigestHtml(html: string): string {
+export function sanitizeDigestHtml(html: string, topicId?: string): string {
   const trimmed = html.trim();
   if (!trimmed) {
     return "";
@@ -68,6 +74,11 @@ export function sanitizeDigestHtml(html: string): string {
         out += `<a href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">`;
       } else {
         out += "<a>";
+      }
+    } else if (tag === "img") {
+      const src = extractSrc(match[2] ?? "");
+      if (src && isAllowedBoardIllustrationSrc(src, topicId)) {
+        out += `<img src="${escapeAttr(src)}"/>`;
       }
     } else if (VOID_TAGS.has(tag) || full.endsWith("/>")) {
       out += `<${tag}/>`;
@@ -123,6 +134,14 @@ function extractHref(attrString: string): string | null {
     return `https:${raw}`;
   }
   return null;
+}
+
+function extractSrc(attrString: string): string | null {
+  const match = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrString);
+  if (!match) {
+    return null;
+  }
+  return (match[1] ?? match[2] ?? match[3] ?? "").trim() || null;
 }
 
 function escapeText(value: string): string {

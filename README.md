@@ -180,7 +180,7 @@ Headless spawn uses `-p --force --sandbox disabled --trust --approve-mcps` so fe
 
 **Per-topic publish pipeline:** each Generate creates one parent job with a `topic_publish` step per enabled topic. Each step researches that topic and calls MCP `publish_digest_page` immediately (one Telegra.ph page per topic). Steps run sequentially; when all complete, the job is done. There is no merge step.
 
-**Home page (topic board):** the main area shows the latest digest per enabled topic within the **board stale window** (`boardStaleDays` in admin prompt settings, default 1 day). The sidebar lists recent topic digests (newest first) with links to Telegra.ph. Article HTML lives on Telegra.ph only; the portal stores metadata in `TopicPage` and `StoryIndex`.
+**Home page (topic board):** the main area shows the latest digest per enabled topic within the **board stale window** (`boardStaleDays` in admin prompt settings, default 1 day). The sidebar lists recent topic digests (newest first) with links to Telegra.ph. Digest HTML is stored in `TopicPage.htmlContent` for the board; Telegra.ph gets text-only pages (illustrations are stripped). Optional story photos can appear on the portal board only — they are downloaded to the VPS (`/app/data/illustrations/{topicId}/` alongside the SQLite DB) and removed when that topic is published again.
 
 **Legacy models:** `PublishedPage` / `PublishedStory` remain in the schema for old merged digests and idempotent publish on pre-migration jobs. New publishes write `TopicPage` / `StoryIndex`.
 

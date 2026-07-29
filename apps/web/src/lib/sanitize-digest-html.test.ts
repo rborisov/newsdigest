@@ -29,6 +29,26 @@ describe("sanitizeDigestHtml", () => {
     assert.doesNotMatch(html, /javascript:/i);
     assert.match(html, /<a>x<\/a>/);
   });
+
+  it("keeps portal-hosted illustration figures for the matching topic", () => {
+    const topicId = "cltopic1234567890";
+    const src = `/api/illustrations/${topicId}/photo.png`;
+    const html = sanitizeDigestHtml(
+      `<figure><img src="${src}"/><figcaption>Launch</figcaption></figure>`,
+      topicId,
+    );
+    assert.match(html, new RegExp(`src="${src}"`));
+    assert.match(html, /<figcaption>Launch<\/figcaption>/);
+  });
+
+  it("drops external img src values", () => {
+    const html = sanitizeDigestHtml(
+      '<figure><img src="https://cdn.test/photo.jpg"/></figure>',
+      "cltopic1234567890",
+    );
+    assert.doesNotMatch(html, /img/i);
+    assert.doesNotMatch(html, /cdn\.test/);
+  });
 });
 
 describe("stripLeadingTopicHeading", () => {

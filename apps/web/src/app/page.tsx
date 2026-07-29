@@ -108,7 +108,7 @@ export default async function HomePage() {
             <div className="board-list">
               {board.map((card) => {
                 const body = stripLeadingTopicHeading(
-                  sanitizeDigestHtml(card.htmlContent),
+                  sanitizeDigestHtml(card.htmlContent, card.topicId),
                   card.topicName,
                 );
                 return (

@@ -57,12 +57,11 @@ export default async function HomePage() {
         ) : (
           <div className="board-list">
             {board.map((card) => {
-              const body = stripLeadingTopicHeading(
-                sanitizeDigestHtml(
-                  layoutBoardStoryBlocks(card.htmlContent),
-                  card.topicId,
+              const body = sanitizeDigestHtml(
+                layoutBoardStoryBlocks(
+                  stripLeadingTopicHeading(card.htmlContent, card.topicName),
                 ),
-                card.topicName,
+                card.topicId,
               );
               return (
                 <article key={card.topicId} className="board-card">

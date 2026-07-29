@@ -85,4 +85,59 @@ describe("stripLeadingTopicHeading", () => {
     );
     assert.equal(html, "<h3>Other</h3><p>Story.</p>");
   });
+
+  it("matches topic names with ampersands against escaped headings", () => {
+    const html = stripLeadingTopicHeading(
+      "<h3>AI &amp; software patents</h3><p>Story.</p>",
+      "AI & software patents",
+    );
+    assert.equal(html, "<p>Story.</p>");
+  });
+
+  it("still works when sanitize runs before strip (ampersand topics)", () => {
+    const sanitized = sanitizeDigestHtml(
+      "<h3>AI & software patents</h3><p><strong>Foo</strong> — bar.</p>",
+    );
+    const html = stripLeadingTopicHeading(sanitized, "AI & software patents");
+    assert.equal(html, "<p><strong>Foo</strong> — bar.</p>");
+  });
+
+  it("unwraps double-escaped ampersands after sanitize of entity HTML", () => {
+    const sanitized = sanitizeDigestHtml(
+      "<h3>AI &amp; software patents</h3><p>Story.</p>",
+    );
+    const html = stripLeadingTopicHeading(sanitized, "AI & software patents");
+    assert.equal(html, "<p>Story.</p>");
+  });
+
+  it("allows h3 attributes and inner tags", () => {
+    const html = stripLeadingTopicHeading(
+      '<h3 class="topic"><strong>AI &amp; software patents</strong></h3><p>Story.</p>',
+      "AI & software patents",
+    );
+    assert.equal(html, "<p>Story.</p>");
+  });
+
+  it("decodes named entities and nbsp", () => {
+    const html = stripLeadingTopicHeading(
+      "<h3>caf&eacute;&nbsp;&mdash;&nbsp;Patents&trade;</h3><p>Story.</p>",
+      "café — Patents™",
+    );
+    assert.equal(html, "<p>Story.</p>");
+  });
+
+  it("matches NFC-equivalent unicode", () => {
+    const composed = "café";
+    const decomposed = "cafe\u0301";
+    const html = stripLeadingTopicHeading(`<h3>${decomposed}</h3><p>Story.</p>`, composed);
+    assert.equal(html, "<p>Story.</p>");
+  });
+
+  it("skips leading HTML comments before the topic h3", () => {
+    const html = stripLeadingTopicHeading(
+      "<!-- agent -->\n<h3>Topic</h3><p>Story.</p>",
+      "Topic",
+    );
+    assert.equal(html, "<p>Story.</p>");
+  });
 });

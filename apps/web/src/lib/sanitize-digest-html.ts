@@ -106,21 +106,131 @@ export function sanitizeDigestHtml(html: string, topicId?: string): string {
 }
 
 /**
+ * Named entities agents / sanitizers commonly emit in headings.
+ * Numeric entities (&#…; / &#x…;) are handled separately.
+ */
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00A0",
+  ensp: "\u2002",
+  emsp: "\u2003",
+  thinsp: "\u2009",
+  ndash: "\u2013",
+  mdash: "\u2014",
+  hellip: "\u2026",
+  trade: "\u2122",
+  copy: "\u00A9",
+  reg: "\u00AE",
+  lsquo: "\u2018",
+  rsquo: "\u2019",
+  ldquo: "\u201C",
+  rdquo: "\u201D",
+  sbquo: "\u201A",
+  bdquo: "\u201E",
+  bull: "\u2022",
+  middot: "\u00B7",
+  deg: "\u00B0",
+  times: "\u00D7",
+  divide: "\u00F7",
+  plusmn: "\u00B1",
+  frac12: "\u00BD",
+  frac14: "\u00BC",
+  frac34: "\u00BE",
+  eacute: "\u00E9",
+  egrave: "\u00E8",
+  ecirc: "\u00EA",
+  aacute: "\u00E1",
+  agrave: "\u00E0",
+  acirc: "\u00E2",
+  iacute: "\u00ED",
+  oacute: "\u00F3",
+  uacute: "\u00FA",
+  ntilde: "\u00F1",
+  ccedil: "\u00E7",
+  auml: "\u00E4",
+  ouml: "\u00F6",
+  uuml: "\u00FC",
+  szlig: "\u00DF",
+};
+
+/** Decode HTML entities; repeats to unwind double-escaped forms like `&amp;amp;`. */
+function decodeHtmlEntities(value: string): string {
+  let current = value;
+  for (let pass = 0; pass < 8; pass += 1) {
+    const next = current.replace(
+      /&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi,
+      (entity, body: string) => {
+        if (body.startsWith("#")) {
+          const code =
+            body[1]?.toLowerCase() === "x"
+              ? Number.parseInt(body.slice(2), 16)
+              : Number.parseInt(body.slice(1), 10);
+          if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) {
+            return entity;
+          }
+          try {
+            return String.fromCodePoint(code);
+          } catch {
+            return entity;
+          }
+        }
+        return NAMED_HTML_ENTITIES[body.toLowerCase()] ?? entity;
+      },
+    );
+    if (next === current) {
+      break;
+    }
+    current = next;
+  }
+  return current;
+}
+
+function stripHtmlTags(value: string): string {
+  return value.replace(/<[^>]+>/g, " ");
+}
+
+function normalizeHeadingText(value: string): string {
+  return decodeHtmlEntities(stripHtmlTags(value))
+    .normalize("NFC")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+const LEADING_HEADING_NOISE = /^(?:\s|<!--[\s\S]*?-->)*/;
+const LEADING_H3 =
+  /^<h3\b[^>]*>([\s\S]*?)<\/h3>\s*/i;
+
+/**
  * Drop a leading <h3> that repeats the board card topic title
  * (agents are instructed to start HTML with that heading for Telegra.ph).
+ *
+ * Tolerates attributes, inner tags, HTML entities (including double-escaped
+ * `&amp;`), and Unicode NFC differences.
  */
 export function stripLeadingTopicHeading(html: string, topicName: string): string {
-  const name = topicName.trim();
+  const name = normalizeHeadingText(topicName);
   if (!html.trim() || !name) {
     return html;
   }
 
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(
-    `^\\s*<h3>\\s*${escaped}\\s*<\\/h3>\\s*`,
-    "i",
-  );
-  return html.replace(pattern, "").trim();
+  const noise = LEADING_HEADING_NOISE.exec(html);
+  const start = noise?.[0].length ?? 0;
+  const rest = html.slice(start);
+  const match = LEADING_H3.exec(rest);
+  if (!match) {
+    return html;
+  }
+
+  if (normalizeHeadingText(match[1] ?? "") !== name) {
+    return html;
+  }
+
+  return html.slice(start + match[0].length).trim();
 }
 
 function extractHref(attrString: string): string | null {

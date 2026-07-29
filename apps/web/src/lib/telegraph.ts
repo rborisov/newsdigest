@@ -9,6 +9,7 @@ import {
   prepareBoardHtmlWithIllustrations,
   stripIllustrationsForTelegraph,
 } from "./topic-illustrations";
+import { resolveStoryIds, stampStoryIdsInHtml } from "./story-ids";
 
 export const INDEX_SOFT_LIMIT_BYTES = 55_000;
 export const INDEX_PAGE_TITLE = "n. digests";
@@ -903,6 +904,10 @@ export async function publishDigest(
     );
   }
 
+  const storiesWithIds = await resolveStoryIds(db, input.stories);
+  boardHtml = stampStoryIdsInHtml(boardHtml, storiesWithIds);
+  telegraphHtml = stripIllustrationsForTelegraph(boardHtml);
+
   const digest = await createPage({
     accessToken,
     title: input.title,
@@ -927,7 +932,7 @@ export async function publishDigest(
     },
   });
 
-  for (const story of input.stories) {
+  for (const story of storiesWithIds) {
     if (story.canonicalUrl) {
       await db.storyIndex.upsert({
         where: { canonicalUrl: story.canonicalUrl },
@@ -937,6 +942,7 @@ export async function publishDigest(
           topicPageId: topicPage.id,
         },
         create: {
+          id: story.id,
           title: story.title,
           canonicalUrl: story.canonicalUrl,
           titleKey: story.titleKey ?? null,
@@ -948,6 +954,7 @@ export async function publishDigest(
 
     await db.storyIndex.create({
       data: {
+        id: story.id,
         title: story.title,
         titleKey: story.titleKey ?? null,
         topicPageId: topicPage.id,
@@ -962,7 +969,7 @@ export async function publishDigest(
       telegraphUrl: topicPage.telegraphUrl,
       telegraphPath: topicPage.telegraphPath,
       publishedAt: topicPage.publishedAt,
-      storyTitles: input.stories.map((story) => story.title),
+      storyTitles: storiesWithIds.map((story) => story.title),
     },
     pageKind: "topic",
     prisma: db,

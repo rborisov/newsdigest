@@ -28,6 +28,7 @@ export async function PATCH(request: Request) {
   const body = (await request.json()) as {
     template?: string;
     periodHours?: number;
+    boardStaleDays?: number;
   };
 
   const existing = await prisma.promptConfig.findUnique({ where: { id: PROMPT_ID } });
@@ -35,7 +36,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Prompt config not found." }, { status: 404 });
   }
 
-  const data: { template?: string; periodHours?: number } = {};
+  const data: { template?: string; periodHours?: number; boardStaleDays?: number } = {};
 
   if (body.template !== undefined) {
     const template = body.template.trim();
@@ -53,6 +54,16 @@ export async function PATCH(request: Request) {
       );
     }
     data.periodHours = body.periodHours;
+  }
+
+  if (body.boardStaleDays !== undefined) {
+    if (!Number.isInteger(body.boardStaleDays) || body.boardStaleDays < 1 || body.boardStaleDays > 14) {
+      return NextResponse.json(
+        { error: "Board stale days must be an integer between 1 and 14." },
+        { status: 400 },
+      );
+    }
+    data.boardStaleDays = body.boardStaleDays;
   }
 
   const prompt = await prisma.promptConfig.update({

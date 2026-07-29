@@ -33,6 +33,7 @@ type ScheduleRow = {
 type PromptConfigRow = {
   template: string;
   periodHours: number;
+  boardStaleDays: number;
 };
 
 type TelegraphMetaRow = {
@@ -147,10 +148,16 @@ function shortJobId(id: string): string {
 }
 
 function stepLabel(step: GenerationStepRow): string {
+  if (step.kind === "topic_publish") {
+    return step.topicName ? `publish: ${step.topicName}` : "topic publish";
+  }
+  if (step.kind === "topic_draft") {
+    return step.topicName ? `draft: ${step.topicName}` : "topic draft";
+  }
   if (step.kind === "merge_publish") {
     return "merge → publish";
   }
-  return step.topicName ? `draft: ${step.topicName}` : "topic draft";
+  return step.topicName ?? step.kind;
 }
 
 function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
@@ -213,8 +220,7 @@ function JobsSection({ initialJobs }: { initialJobs: GenerationJobRow[] }) {
       </div>
       <p style={messageStyle}>
         Auto-refreshes every 5s while a job is pending/running, otherwise every 30s. Each Generate runs
-        one short agent per enabled topic (draft), then one merge/publish step. Expand a job for step
-        status and logs. Server:{" "}
+        one publish step per enabled topic. Expand a job for step status and logs. Server:{" "}
         <code>tail -f /opt/newsdigest/data/logs/&lt;jobId&gt;[-step-&lt;stepId&gt;].log</code>
       </p>
       <StatusMessage error={error} />
@@ -523,6 +529,7 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
   const router = useRouter();
   const [template, setTemplate] = useState(initialPrompt.template);
   const [periodHours, setPeriodHours] = useState(String(initialPrompt.periodHours));
+  const [boardStaleDays, setBoardStaleDays] = useState(String(initialPrompt.boardStaleDays));
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -538,6 +545,7 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
       body: JSON.stringify({
         template,
         periodHours: Number(periodHours),
+        boardStaleDays: Number(boardStaleDays),
       }),
     });
 
@@ -559,18 +567,32 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
       </p>
 
       <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "1rem" }}>
-        <label style={fieldStyle}>
-          Lookback period (hours)
-          <input
-            type="number"
-            min={1}
-            max={168}
-            required
-            value={periodHours}
-            onChange={(event) => setPeriodHours(event.target.value)}
-            style={{ ...inputStyle, maxWidth: "8rem" }}
-          />
-        </label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+          <label style={fieldStyle}>
+            Lookback period (hours)
+            <input
+              type="number"
+              min={1}
+              max={168}
+              required
+              value={periodHours}
+              onChange={(event) => setPeriodHours(event.target.value)}
+              style={{ ...inputStyle, maxWidth: "8rem" }}
+            />
+          </label>
+          <label style={fieldStyle}>
+            Board stale days
+            <input
+              type="number"
+              min={1}
+              max={14}
+              required
+              value={boardStaleDays}
+              onChange={(event) => setBoardStaleDays(event.target.value)}
+              style={{ ...inputStyle, maxWidth: "8rem" }}
+            />
+          </label>
+        </div>
         <label style={fieldStyle}>
           Prompt template
           <textarea

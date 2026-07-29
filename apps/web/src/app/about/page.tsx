@@ -3,6 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { resolveAboutRedirectLocale } from "@/lib/about-page";
 import { prisma } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export default async function AboutIndexPage() {
   const about = await prisma.aboutPage.findUnique({ where: { id: "default" } });
   if (!about) notFound();

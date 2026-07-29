@@ -626,6 +626,11 @@ install_app() {
   log "Generating Prisma client…"
   npx prisma generate --schema=apps/web/prisma/schema.prisma
 
+  # Schema must exist before `next build`: App Router may prerender routes that query Prisma.
+  log "Applying database schema + seed…"
+  npm run db:push --workspace=web
+  npm run db:seed --workspace=web
+
   local need_build=0
   if [[ ! -f apps/web/.next/standalone/apps/web/server.js ]] \
     || [[ ! -d apps/worker/dist ]] \
@@ -647,10 +652,6 @@ install_app() {
   else
     log "Already built at ${head_rev} — skipping compile"
   fi
-
-  log "Applying database schema + seed…"
-  npm run db:push --workspace=web
-  npm run db:seed --workspace=web
 
   stage_runtime_from_build
   install_runtime_node_deps

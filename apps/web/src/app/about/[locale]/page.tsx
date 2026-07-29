@@ -14,6 +14,8 @@ import {
 import { renderAboutMarkdown } from "@/lib/about-markdown";
 import { prisma } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 type AboutLocalePageProps = {
   params: Promise<{ locale: string }>;
 };

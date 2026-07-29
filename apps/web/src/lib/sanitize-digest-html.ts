@@ -84,6 +84,24 @@ export function sanitizeDigestHtml(html: string): string {
   return out;
 }
 
+/**
+ * Drop a leading <h3> that repeats the board card topic title
+ * (agents are instructed to start HTML with that heading for Telegra.ph).
+ */
+export function stripLeadingTopicHeading(html: string, topicName: string): string {
+  const name = topicName.trim();
+  if (!html.trim() || !name) {
+    return html;
+  }
+
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `^\\s*<h3>\\s*${escaped}\\s*<\\/h3>\\s*`,
+    "i",
+  );
+  return html.replace(pattern, "").trim();
+}
+
 function extractHref(attrString: string): string | null {
   const match = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrString);
   if (!match) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { sanitizeDigestHtml } from "./sanitize-digest-html";
+import { sanitizeDigestHtml, stripLeadingTopicHeading } from "./sanitize-digest-html";
 
 describe("sanitizeDigestHtml", () => {
   it("keeps telegraph-compatible markup and safe links", () => {
@@ -28,5 +28,23 @@ describe("sanitizeDigestHtml", () => {
     const html = sanitizeDigestHtml('<a href="javascript:alert(1)">x</a>');
     assert.doesNotMatch(html, /javascript:/i);
     assert.match(html, /<a>x<\/a>/);
+  });
+});
+
+describe("stripLeadingTopicHeading", () => {
+  it("removes a leading h3 that matches the topic name", () => {
+    const html = stripLeadingTopicHeading(
+      "<h3>Russian IT industry</h3><p>Story one.</p>",
+      "Russian IT industry",
+    );
+    assert.equal(html, "<p>Story one.</p>");
+  });
+
+  it("keeps a different leading h3", () => {
+    const html = stripLeadingTopicHeading(
+      "<h3>Other</h3><p>Story.</p>",
+      "Russian IT industry",
+    );
+    assert.equal(html, "<h3>Other</h3><p>Story.</p>");
   });
 });

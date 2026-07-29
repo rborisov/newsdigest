@@ -5,7 +5,7 @@ import { SiteHeader } from "@/app/site-header";
 import { auth } from "@/lib/auth";
 import { digestListTags, formatDigestWhen } from "@/lib/digest-display";
 import { prisma } from "@/lib/db";
-import { sanitizeDigestHtml } from "@/lib/sanitize-digest-html";
+import { sanitizeDigestHtml, stripLeadingTopicHeading } from "@/lib/sanitize-digest-html";
 import { loadTopicBoard } from "@/lib/topic-board";
 
 export default async function HomePage() {
@@ -104,7 +104,10 @@ export default async function HomePage() {
           ) : (
             <div className="board-list">
               {board.map((card) => {
-                const body = sanitizeDigestHtml(card.htmlContent);
+                const body = stripLeadingTopicHeading(
+                  sanitizeDigestHtml(card.htmlContent),
+                  card.topicName,
+                );
                 return (
                   <article key={card.topicId} className="board-card">
                     <div className="board-card-header">

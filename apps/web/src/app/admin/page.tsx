@@ -1,9 +1,12 @@
 import { AdminClient } from "@/app/admin/admin-ui";
 import { requireAdmin } from "@/lib/require-admin";
 import { prisma } from "@/lib/db";
+import { syncScheduleHumanFieldsFromCron } from "@/lib/sync-schedule-human";
 
 export default async function AdminPage() {
   const session = await requireAdmin();
+
+  await syncScheduleHumanFieldsFromCron();
 
   const [users, topics, schedules, prompt, telegraph, jobs] = await Promise.all([
     prisma.allowedUser.findMany({
@@ -18,16 +21,22 @@ export default async function AdminPage() {
         keywords: true,
         enabled: true,
         sortOrder: true,
+        scheduleId: true,
       },
     }),
     prisma.schedule.findMany({
-      orderBy: { name: "asc" },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
       select: {
         id: true,
         name: true,
         cronExpr: true,
         timezone: true,
         enabled: true,
+        isDefault: true,
+        recurrence: true,
+        timeOfDay: true,
+        weekday: true,
+        intervalHours: true,
       },
     }),
     prisma.promptConfig.findUnique({

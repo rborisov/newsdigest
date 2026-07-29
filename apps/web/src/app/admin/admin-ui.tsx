@@ -7,6 +7,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { SiteHeader } from "@/app/site-header";
 import { SignOutButton } from "@/app/sign-out-button";
 import { GenerateButton } from "@/app/generate-button";
+import { describeHumanSchedule } from "@/lib/schedule-human";
 
 type AllowedUserRow = {
   id: string;
@@ -20,6 +21,7 @@ type TopicRow = {
   keywords: string;
   enabled: boolean;
   sortOrder: number;
+  scheduleId: string | null;
 };
 
 type ScheduleRow = {
@@ -28,6 +30,11 @@ type ScheduleRow = {
   cronExpr: string;
   timezone: string;
   enabled: boolean;
+  isDefault: boolean;
+  recurrence: string;
+  timeOfDay: string;
+  weekday: number | null;
+  intervalHours: number | null;
 };
 
 type PromptConfigRow = {
@@ -640,15 +647,42 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
   );
 }
 
-function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
+const WEEKDAY_OPTIONS = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+] as const;
+
+function scheduleLabel(schedules: ScheduleRow[], scheduleId: string | null): string {
+  if (!scheduleId) {
+    const def = schedules.find((s) => s.isDefault);
+    return def ? `Default (${def.name})` : "Default";
+  }
+  const match = schedules.find((s) => s.id === scheduleId);
+  return match?.name ?? "Unknown schedule";
+}
+
+function TopicsSection({
+  initialTopics,
+  schedules,
+}: {
+  initialTopics: TopicRow[];
+  schedules: ScheduleRow[];
+}) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [keywords, setKeywords] = useState("");
   const [sortOrder, setSortOrder] = useState("0");
+  const [scheduleId, setScheduleId] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editKeywords, setEditKeywords] = useState("");
   const [editSortOrder, setEditSortOrder] = useState("0");
+  const [editScheduleId, setEditScheduleId] = useState("");
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -658,6 +692,7 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
     setEditName(topic.name);
     setEditKeywords(topic.keywords);
     setEditSortOrder(String(topic.sortOrder));
+    setEditScheduleId(topic.scheduleId ?? "");
     setMessage(undefined);
     setError(undefined);
   }
@@ -678,6 +713,7 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
         name,
         keywords,
         sortOrder: Number(sortOrder),
+        scheduleId: scheduleId || null,
       }),
     });
 
@@ -690,6 +726,7 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
     setName("");
     setKeywords("");
     setSortOrder("0");
+    setScheduleId("");
     setMessage("Topic added.");
     router.refresh();
   }
@@ -706,6 +743,7 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
         name: editName,
         keywords: editKeywords,
         sortOrder: Number(editSortOrder),
+        scheduleId: editScheduleId || null,
       }),
     });
 
@@ -762,9 +800,24 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
     router.refresh();
   }
 
+  const scheduleSelect = (value: string, onChange: (v: string) => void) => (
+    <select value={value} onChange={(event) => onChange(event.target.value)} style={inputStyle}>
+      <option value="">Default schedule</option>
+      {schedules.map((schedule) => (
+        <option key={schedule.id} value={schedule.id}>
+          {schedule.name}
+          {schedule.isDefault ? " (default)" : ""}
+        </option>
+      ))}
+    </select>
+  );
+
   return (
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Topics</h2>
+      <p style={{ margin: "0.5rem 0 0", color: "#555", fontSize: "0.95rem" }}>
+        Assign a schedule per topic, or leave Default for topics that should follow the default schedule.
+      </p>
 
       <form onSubmit={handleAdd} style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end", marginTop: "1rem" }}>
         <label style={fieldStyle}>
@@ -784,6 +837,10 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
             style={{ ...inputStyle, maxWidth: "6rem" }}
           />
         </label>
+        <label style={fieldStyle}>
+          Schedule
+          {scheduleSelect(scheduleId, setScheduleId)}
+        </label>
         <button type="submit" disabled={pending} style={buttonStyle}>
           Add topic
         </button>
@@ -795,6 +852,7 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
             <th style={cellStyle}>Name</th>
             <th style={cellStyle}>Keywords</th>
             <th style={cellStyle}>Order</th>
+            <th style={cellStyle}>Schedule</th>
             <th style={cellStyle}>Enabled</th>
             <th style={cellStyle}>Actions</th>
           </tr>
@@ -802,7 +860,7 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
         <tbody>
           {initialTopics.length === 0 ? (
             <tr>
-              <td colSpan={5} style={cellStyle}>No topics yet.</td>
+              <td colSpan={6} style={cellStyle}>No topics yet.</td>
             </tr>
           ) : (
             initialTopics.map((topic) => {
@@ -843,6 +901,11 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
                     ) : (
                       topic.sortOrder
                     )}
+                  </td>
+                  <td style={cellStyle}>
+                    {isEditing
+                      ? scheduleSelect(editScheduleId, setEditScheduleId)
+                      : scheduleLabel(schedules, topic.scheduleId)}
                   </td>
                   <td style={cellStyle}>{topic.enabled ? "Yes" : "No"}</td>
                   <td style={cellStyle}>
@@ -889,11 +952,61 @@ function TopicsSection({ initialTopics }: { initialTopics: TopicRow[] }) {
 function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[] }) {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [cronExpr, setCronExpr] = useState("");
+  const [recurrence, setRecurrence] = useState("daily");
+  const [timeOfDay, setTimeOfDay] = useState("09:00");
+  const [weekday, setWeekday] = useState("5");
+  const [intervalHours, setIntervalHours] = useState("5");
   const [timezone, setTimezone] = useState("UTC");
+  const [isDefault, setIsDefault] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRecurrence, setEditRecurrence] = useState("daily");
+  const [editTimeOfDay, setEditTimeOfDay] = useState("09:00");
+  const [editWeekday, setEditWeekday] = useState("5");
+  const [editIntervalHours, setEditIntervalHours] = useState("5");
+  const [editTimezone, setEditTimezone] = useState("UTC");
+  const [editIsDefault, setEditIsDefault] = useState(false);
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
+
+  function schedulePayload(fields: {
+    name: string;
+    recurrence: string;
+    timeOfDay: string;
+    weekday: string;
+    intervalHours: string;
+    timezone: string;
+    isDefault: boolean;
+  }) {
+    return {
+      name: fields.name,
+      recurrence: fields.recurrence,
+      timeOfDay: fields.timeOfDay,
+      timezone: fields.timezone,
+      isDefault: fields.isDefault,
+      weekday: fields.recurrence === "weekly" ? Number(fields.weekday) : null,
+      intervalHours:
+        fields.recurrence === "interval_hours" ? Number(fields.intervalHours) : null,
+    };
+  }
+
+  function startEdit(schedule: ScheduleRow) {
+    setEditingId(schedule.id);
+    setEditName(schedule.name);
+    setEditRecurrence(schedule.recurrence || "daily");
+    setEditTimeOfDay(schedule.timeOfDay || "09:00");
+    setEditWeekday(String(schedule.weekday ?? 5));
+    setEditIntervalHours(String(schedule.intervalHours ?? 5));
+    setEditTimezone(schedule.timezone || "UTC");
+    setEditIsDefault(schedule.isDefault);
+    setMessage(undefined);
+    setError(undefined);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
 
   async function handleAdd(event: React.FormEvent) {
     event.preventDefault();
@@ -903,7 +1016,17 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
 
     const result = await adminFetch("/api/admin/schedules", {
       method: "POST",
-      body: JSON.stringify({ name, cronExpr, timezone }),
+      body: JSON.stringify(
+        schedulePayload({
+          name,
+          recurrence,
+          timeOfDay,
+          weekday,
+          intervalHours,
+          timezone,
+          isDefault,
+        }),
+      ),
     });
 
     setPending(false);
@@ -913,9 +1036,45 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
     }
 
     setName("");
-    setCronExpr("");
+    setRecurrence("daily");
+    setTimeOfDay("09:00");
+    setWeekday("5");
+    setIntervalHours("5");
     setTimezone("UTC");
+    setIsDefault(false);
     setMessage("Schedule added.");
+    router.refresh();
+  }
+
+  async function saveEdit(scheduleId: string) {
+    setPending(true);
+    setMessage(undefined);
+    setError(undefined);
+
+    const result = await adminFetch("/api/admin/schedules", {
+      method: "PATCH",
+      body: JSON.stringify({
+        id: scheduleId,
+        ...schedulePayload({
+          name: editName,
+          recurrence: editRecurrence,
+          timeOfDay: editTimeOfDay,
+          weekday: editWeekday,
+          intervalHours: editIntervalHours,
+          timezone: editTimezone,
+          isDefault: editIsDefault,
+        }),
+      }),
+    });
+
+    setPending(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    setEditingId(null);
+    setMessage("Schedule updated.");
     router.refresh();
   }
 
@@ -937,7 +1096,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
   }
 
   async function removeSchedule(schedule: ScheduleRow) {
-    if (!window.confirm(`Delete schedule "${schedule.name}"?`)) {
+    if (!window.confirm(`Delete schedule "${schedule.name}"? Topics using it will fall back to Default.`)) {
       return;
     }
 
@@ -954,27 +1113,115 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
       return;
     }
 
+    if (editingId === schedule.id) {
+      setEditingId(null);
+    }
     setMessage("Schedule deleted.");
     router.refresh();
+  }
+
+  function recurrenceFields(
+    current: string,
+    setCurrent: (v: string) => void,
+    time: string,
+    setTime: (v: string) => void,
+    day: string,
+    setDay: (v: string) => void,
+    hours: string,
+    setHours: (v: string) => void,
+    zone: string,
+    setZone: (v: string) => void,
+    def: boolean,
+    setDef: (v: boolean) => void,
+  ) {
+    return (
+      <>
+        <label style={fieldStyle}>
+          Recurrence
+          <select value={current} onChange={(event) => setCurrent(event.target.value)} style={inputStyle}>
+            <option value="daily">Every day</option>
+            <option value="weekly">Every week</option>
+            <option value="interval_hours">Every N hours</option>
+          </select>
+        </label>
+        {current === "weekly" ? (
+          <label style={fieldStyle}>
+            Weekday
+            <select value={day} onChange={(event) => setDay(event.target.value)} style={inputStyle}>
+              {WEEKDAY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {current === "interval_hours" ? (
+          <label style={fieldStyle}>
+            Every N hours
+            <input
+              type="number"
+              min={1}
+              max={24}
+              value={hours}
+              onChange={(event) => setHours(event.target.value)}
+              style={{ ...inputStyle, maxWidth: "6rem" }}
+            />
+          </label>
+        ) : null}
+        <label style={fieldStyle}>
+          Start time
+          <input
+            type="time"
+            required
+            value={time}
+            onChange={(event) => setTime(event.target.value)}
+            style={inputStyle}
+          />
+        </label>
+        <label style={fieldStyle}>
+          Timezone
+          <input
+            value={zone}
+            onChange={(event) => setZone(event.target.value)}
+            style={inputStyle}
+            placeholder="Europe/Moscow"
+          />
+        </label>
+        <label style={{ ...fieldStyle, flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
+          <input type="checkbox" checked={def} onChange={(event) => setDef(event.target.checked)} />
+          Default schedule
+        </label>
+      </>
+    );
   }
 
   return (
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Schedules</h2>
+      <p style={{ margin: "0.5rem 0 0", color: "#555", fontSize: "0.95rem" }}>
+        Set when topics run: every day, a weekday, or every N hours from a start time. Mark one schedule as Default for topics without a specific assignment. Manual Generate still runs all enabled topics.
+      </p>
 
       <form onSubmit={handleAdd} style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end", marginTop: "1rem" }}>
         <label style={fieldStyle}>
           Name
           <input required value={name} onChange={(event) => setName(event.target.value)} style={inputStyle} />
         </label>
-        <label style={fieldStyle}>
-          Cron
-          <input required value={cronExpr} onChange={(event) => setCronExpr(event.target.value)} style={inputStyle} placeholder="0 9 * * *" />
-        </label>
-        <label style={fieldStyle}>
-          Timezone
-          <input value={timezone} onChange={(event) => setTimezone(event.target.value)} style={inputStyle} />
-        </label>
+        {recurrenceFields(
+          recurrence,
+          setRecurrence,
+          timeOfDay,
+          setTimeOfDay,
+          weekday,
+          setWeekday,
+          intervalHours,
+          setIntervalHours,
+          timezone,
+          setTimezone,
+          isDefault,
+          setIsDefault,
+        )}
         <button type="submit" disabled={pending} style={buttonStyle}>
           Add schedule
         </button>
@@ -984,8 +1231,8 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
         <thead>
           <tr>
             <th style={cellStyle}>Name</th>
-            <th style={cellStyle}>Cron</th>
-            <th style={cellStyle}>Timezone</th>
+            <th style={cellStyle}>When</th>
+            <th style={cellStyle}>Default</th>
             <th style={cellStyle}>Enabled</th>
             <th style={cellStyle}>Actions</th>
           </tr>
@@ -996,22 +1243,91 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
               <td colSpan={5} style={cellStyle}>No schedules yet.</td>
             </tr>
           ) : (
-            initialSchedules.map((schedule) => (
-              <tr key={schedule.id}>
-                <td style={cellStyle}>{schedule.name}</td>
-                <td style={cellStyle}>{schedule.cronExpr}</td>
-                <td style={cellStyle}>{schedule.timezone}</td>
-                <td style={cellStyle}>{schedule.enabled ? "Yes" : "No"}</td>
-                <td style={cellStyle}>
-                  <button type="button" style={buttonStyle} onClick={() => toggleEnabled(schedule)}>
-                    {schedule.enabled ? "Disable" : "Enable"}
-                  </button>{" "}
-                  <button type="button" style={buttonStyle} onClick={() => removeSchedule(schedule)}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))
+            initialSchedules.map((schedule) => {
+              const isEditing = editingId === schedule.id;
+              return (
+                <Fragment key={schedule.id}>
+                  <tr>
+                    <td style={cellStyle}>
+                      {isEditing ? (
+                        <input
+                          required
+                          value={editName}
+                          onChange={(event) => setEditName(event.target.value)}
+                          style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+                        />
+                      ) : (
+                        schedule.name
+                      )}
+                    </td>
+                    <td style={cellStyle}>
+                      {isEditing
+                        ? null
+                        : describeHumanSchedule({
+                            recurrence: schedule.recurrence,
+                            timeOfDay: schedule.timeOfDay,
+                            timezone: schedule.timezone,
+                            weekday: schedule.weekday,
+                            intervalHours: schedule.intervalHours,
+                          })}
+                    </td>
+                    <td style={cellStyle}>{schedule.isDefault ? "Yes" : "—"}</td>
+                    <td style={cellStyle}>{schedule.enabled ? "Yes" : "No"}</td>
+                    <td style={cellStyle}>
+                      {isEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={pending || !editName.trim()}
+                            style={buttonStyle}
+                            onClick={() => void saveEdit(schedule.id)}
+                          >
+                            Save
+                          </button>{" "}
+                          <button type="button" disabled={pending} style={buttonStyle} onClick={cancelEdit}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" style={buttonStyle} onClick={() => startEdit(schedule)}>
+                            Edit
+                          </button>{" "}
+                          <button type="button" style={buttonStyle} onClick={() => toggleEnabled(schedule)}>
+                            {schedule.enabled ? "Disable" : "Enable"}
+                          </button>{" "}
+                          <button type="button" style={buttonStyle} onClick={() => removeSchedule(schedule)}>
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                  {isEditing ? (
+                    <tr>
+                      <td colSpan={5} style={cellStyle}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end" }}>
+                          {recurrenceFields(
+                            editRecurrence,
+                            setEditRecurrence,
+                            editTimeOfDay,
+                            setEditTimeOfDay,
+                            editWeekday,
+                            setEditWeekday,
+                            editIntervalHours,
+                            setEditIntervalHours,
+                            editTimezone,
+                            setEditTimezone,
+                            editIsDefault,
+                            setEditIsDefault,
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })
           )}
         </tbody>
       </table>
@@ -1209,7 +1525,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
       {tab === "content" ? (
         <>
           <PromptSection initialPrompt={data.prompt} />
-          <TopicsSection initialTopics={data.topics} />
+          <TopicsSection initialTopics={data.topics} schedules={data.schedules} />
           <SchedulesSection initialSchedules={data.schedules} />
         </>
       ) : null}

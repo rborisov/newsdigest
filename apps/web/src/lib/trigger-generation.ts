@@ -40,25 +40,67 @@ export async function triggerGeneration(
     };
   }
 
-  const topics = await defaultPrisma.topic.findMany({
-    where: { enabled: true },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true },
-  });
+  const scheduleId = input.scheduleId?.trim() || null;
+  let topics: { id: string; name: string }[];
 
-  if (topics.length === 0) {
-    return {
-      ok: false,
-      error: "No enabled topics. Add or enable at least one topic in Admin.",
-      status: 400,
-    };
+  if (scheduleId) {
+    const schedule = await defaultPrisma.schedule.findUnique({
+      where: { id: scheduleId },
+      select: { id: true, isDefault: true, enabled: true, name: true },
+    });
+    if (!schedule) {
+      return { ok: false, error: "Schedule not found.", status: 404 };
+    }
+    if (!schedule.enabled) {
+      return {
+        ok: false,
+        error: `Schedule "${schedule.name}" is disabled.`,
+        status: 400,
+      };
+    }
+
+    topics = await defaultPrisma.topic.findMany({
+      where: {
+        enabled: true,
+        OR: schedule.isDefault
+          ? [{ scheduleId: schedule.id }, { scheduleId: null }]
+          : [{ scheduleId: schedule.id }],
+      },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true },
+    });
+
+    if (topics.length === 0) {
+      return {
+        ok: false,
+        error: schedule.isDefault
+          ? "No enabled topics for the default schedule (unassigned or linked)."
+          : `No enabled topics linked to schedule "${schedule.name}".`,
+        status: 400,
+      };
+    }
+  } else {
+    // Manual / ad-hoc: all enabled topics
+    topics = await defaultPrisma.topic.findMany({
+      where: { enabled: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true },
+    });
+
+    if (topics.length === 0) {
+      return {
+        ok: false,
+        error: "No enabled topics. Add or enable at least one topic in Admin.",
+        status: 400,
+      };
+    }
   }
 
   const job = await defaultPrisma.generationJob.create({
     data: {
       status: GenerationJobStatus.pending,
       triggerType: input.triggerType,
-      scheduleId: input.scheduleId ?? null,
+      scheduleId,
     },
   });
 

@@ -34,27 +34,42 @@ enum GenerationStepStatus {
 }
 
 model Topic {
-  id        String   @id @default(cuid())
-  name      String
-  keywords  String   @default("")
-  enabled   Boolean  @default(true)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(cuid())
+  name       String
+  keywords   String    @default("")
+  enabled    Boolean   @default(true)
+  sortOrder  Int       @default(0)
+  /// null = use the default schedule
+  scheduleId String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
+  schedule   Schedule?   @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   topicPages TopicPage[]
 }
 
 model Schedule {
-  id        String   @id @default(cuid())
-  name      String
-  cronExpr  String
-  timezone  String   @default("UTC")
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  name          String
+  /// Derived for the worker; do not edit by hand in Admin.
+  cronExpr      String
+  timezone      String   @default("UTC")
+  enabled       Boolean  @default(true)
+  /// Topics with scheduleId=null run on this schedule.
+  isDefault     Boolean  @default(false)
+  /// daily | weekly | interval_hours
+  recurrence    String   @default("daily")
+  /// HH:MM local to timezone
+  timeOfDay     String   @default("09:00")
+  /// 0=Sunday … 6=Saturday when recurrence=weekly
+  weekday       Int?
+  /// When recurrence=interval_hours
+  intervalHours Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  jobs GenerationJob[]
+  topics Topic[]
+  jobs   GenerationJob[]
 }
 
 model PromptConfig {

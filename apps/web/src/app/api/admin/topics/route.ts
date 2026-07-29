@@ -27,11 +27,21 @@ export async function POST(request: Request) {
     keywords?: string;
     enabled?: boolean;
     sortOrder?: number;
+    scheduleId?: string | null;
   };
 
   const name = body.name?.trim() ?? "";
   if (!name) {
     return NextResponse.json({ error: "Name is required." }, { status: 400 });
+  }
+
+  let scheduleId: string | null = null;
+  if (body.scheduleId !== undefined && body.scheduleId !== null && body.scheduleId !== "") {
+    const schedule = await prisma.schedule.findUnique({ where: { id: body.scheduleId } });
+    if (!schedule) {
+      return NextResponse.json({ error: "Schedule not found." }, { status: 400 });
+    }
+    scheduleId = schedule.id;
   }
 
   const topic = await prisma.topic.create({
@@ -40,6 +50,7 @@ export async function POST(request: Request) {
       keywords: body.keywords?.trim() ?? "",
       enabled: body.enabled ?? true,
       sortOrder: body.sortOrder ?? 0,
+      scheduleId,
     },
   });
 
@@ -58,6 +69,7 @@ export async function PATCH(request: Request) {
     keywords?: string;
     enabled?: boolean;
     sortOrder?: number;
+    scheduleId?: string | null;
   };
 
   if (!body.id) {
@@ -74,6 +86,7 @@ export async function PATCH(request: Request) {
     keywords?: string;
     enabled?: boolean;
     sortOrder?: number;
+    scheduleId?: string | null;
   } = {};
 
   if (body.name !== undefined) {
@@ -91,6 +104,17 @@ export async function PATCH(request: Request) {
   }
   if (typeof body.sortOrder === "number") {
     data.sortOrder = body.sortOrder;
+  }
+  if (body.scheduleId !== undefined) {
+    if (body.scheduleId === null || body.scheduleId === "") {
+      data.scheduleId = null;
+    } else {
+      const schedule = await prisma.schedule.findUnique({ where: { id: body.scheduleId } });
+      if (!schedule) {
+        return NextResponse.json({ error: "Schedule not found." }, { status: 400 });
+      }
+      data.scheduleId = schedule.id;
+    }
   }
 
   const topic = await prisma.topic.update({

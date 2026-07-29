@@ -2,8 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { normalizeCanonicalUrl, parseStoriesFromHtml } from "./dedup";
+
 const MAX_ILLUSTRATIONS = 8;
+const MAX_OG_STORIES = 3;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const FETCH_HEADERS = {
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/*,*/*;q=0.8",
+  "User-Agent": "Mozilla/5.0 (compatible; NewsDigestPortal/1.0; +https://github.com/rborisov/newsdigest)",
+};
 const ALLOWED_IMAGE_TYPES = new Set([
   "image/jpeg",
   "image/jpg",
@@ -16,6 +23,185 @@ const IMG_TAG_PATTERN =
   /<img\b([^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*)\/?>/gi;
 const FIGURE_BLOCK_PATTERN = /<figure\b[^>]*>[\s\S]*?<\/figure>/gi;
 const STANDALONE_IMG_PATTERN = /<img\b[^>]*\/?>/gi;
+
+export type IllustrationPrepareResult = {
+  html: string;
+  attempted: number;
+  saved: number;
+  failed: string[];
+  enrichedFromStories: number;
+};
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function resolveAbsoluteUrl(raw: string, baseUrl: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    return new URL(trimmed, baseUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+function sniffImageContentType(bytes: Buffer): string | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (bytes.length >= 4 && bytes.subarray(0, 4).toString("ascii") === "RIFF") {
+    return "image/webp";
+  }
+  if (
+    bytes.length >= 6 &&
+    (bytes.subarray(0, 6).toString("ascii") === "GIF87a" ||
+      bytes.subarray(0, 6).toString("ascii") === "GIF89a")
+  ) {
+    return "image/gif";
+  }
+  return null;
+}
+
+export function extractOgImageFromHtml(pageHtml: string, baseUrl: string): string | null {
+  const patterns = [
+    /<meta\s+[^>]*property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["'][^>]*>/i,
+    /<meta\s+[^>]*content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["'][^>]*>/i,
+    /<meta\s+[^>]*name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)["'][^>]*>/i,
+    /<meta\s+[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image(?::src)?["'][^>]*>/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(pageHtml);
+    if (match?.[1]) {
+      const resolved = resolveAbsoluteUrl(match[1], baseUrl);
+      if (resolved) {
+        return resolved;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function fetchOgImageForStory(
+  storyUrl: string,
+  fetchFn: typeof fetch,
+): Promise<string | null> {
+  const normalized = normalizeCanonicalUrl(storyUrl);
+  try {
+    const response = await fetchFn(normalized, {
+      redirect: "follow",
+      headers: FETCH_HEADERS,
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const headerType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (headerType.startsWith("image/")) {
+      return normalized;
+    }
+
+    const text = await response.text();
+    if (text.length > 500_000) {
+      return null;
+    }
+    return extractOgImageFromHtml(text, normalized);
+  } catch {
+    return null;
+  }
+}
+
+function paragraphHasFigureAfter(html: string, storyUrl: string): boolean {
+  const normalized = normalizeCanonicalUrl(storyUrl);
+  const pattern = new RegExp(
+    `<p\\b[^>]*>[\\s\\S]*?href\\s*=\\s*(?:"${escapeRegExp(normalized)}"|'${escapeRegExp(normalized)}'|${escapeRegExp(normalized)})[\\s\\S]*?<\\/p>\\s*(<figure[\\s\\S]*?<\\/figure>)?`,
+    "i",
+  );
+  const match = pattern.exec(html);
+  if (!match) {
+    return false;
+  }
+  return Boolean(match[1]);
+}
+
+function injectFigureAfterStoryParagraph(
+  html: string,
+  storyUrl: string,
+  imageUrl: string,
+  caption: string,
+): string {
+  const normalized = normalizeCanonicalUrl(storyUrl);
+  const figure =
+    `<figure><img src="${imageUrl}"/><figcaption>${escapeHtml(caption)}</figcaption></figure>`;
+  const pattern = new RegExp(
+    `(<p\\b[^>]*>[\\s\\S]*?href\\s*=\\s*(?:"${escapeRegExp(normalized)}"|'${escapeRegExp(normalized)}'|${escapeRegExp(normalized)})[\\s\\S]*?<\\/p>)`,
+    "i",
+  );
+  if (!pattern.test(html)) {
+    return html;
+  }
+  return html.replace(pattern, `$1${figure}`);
+}
+
+/**
+ * When the agent omitted images, fetch og:image (or twitter:image) from story pages
+ * and inject <figure> blocks after matching story paragraphs.
+ */
+export async function enrichHtmlWithStoryIllustrations(
+  html: string,
+  fetchFn: typeof fetch = fetch,
+  options?: { maxStories?: number },
+): Promise<{ html: string; injected: number }> {
+  const maxStories = options?.maxStories ?? MAX_OG_STORIES;
+  const stories = parseStoriesFromHtml(html)
+    .filter((story) => story.canonicalUrl?.trim())
+    .slice(0, maxStories);
+
+  let result = html;
+  let injected = 0;
+
+  for (const story of stories) {
+    const storyUrl = story.canonicalUrl!.trim();
+    if (paragraphHasFigureAfter(result, storyUrl)) {
+      continue;
+    }
+
+    const imageUrl = await fetchOgImageForStory(storyUrl, fetchFn);
+    if (!imageUrl) {
+      continue;
+    }
+
+    const next = injectFigureAfterStoryParagraph(result, storyUrl, imageUrl, story.title);
+    if (next !== result) {
+      result = next;
+      injected += 1;
+    }
+  }
+
+  return { html: result, injected };
+}
 
 export function resolveIllustrationsRoot(): string {
   const explicit = process.env.ILLUSTRATIONS_DIR?.trim();
@@ -147,17 +333,10 @@ async function downloadIllustration(
 
   const response = await fetchFn(sourceUrl, {
     redirect: "follow",
-    headers: { Accept: "image/*,*/*;q=0.8" },
+    headers: FETCH_HEADERS,
   });
   if (!response.ok) {
     throw new Error(`Failed to download image (${response.status})`);
-  }
-
-  const contentType =
-    response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ||
-    "image/jpeg";
-  if (!ALLOWED_IMAGE_TYPES.has(contentType) && !contentType.startsWith("image/")) {
-    throw new Error(`Unsupported image content-type: ${contentType}`);
   }
 
   const bytes = Buffer.from(await response.arrayBuffer());
@@ -166,6 +345,18 @@ async function downloadIllustration(
   }
   if (bytes.byteLength > MAX_IMAGE_BYTES) {
     throw new Error(`Image exceeds ${MAX_IMAGE_BYTES} bytes`);
+  }
+
+  const headerType =
+    response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || "";
+  const sniffedType = sniffImageContentType(bytes);
+  const contentType =
+    sniffedType ??
+    (ALLOWED_IMAGE_TYPES.has(headerType) || headerType.startsWith("image/")
+      ? headerType
+      : null);
+  if (!contentType) {
+    throw new Error(`Unsupported image content-type: ${headerType || "unknown"}`);
   }
 
   const normalizedType = ALLOWED_IMAGE_TYPES.has(contentType) ? contentType : "image/jpeg";
@@ -247,20 +438,31 @@ export async function prepareBoardHtmlWithIllustrations(
   topicId: string,
   html: string,
   fetchFn: typeof fetch = fetch,
-): Promise<string> {
+): Promise<IllustrationPrepareResult> {
   const externalUrls = collectExternalImageUrls(html).slice(0, MAX_ILLUSTRATIONS);
   const replacements = new Map<string, string | null>();
+  const failed: string[] = [];
+  let saved = 0;
 
   for (const sourceUrl of externalUrls) {
     try {
       const localUrl = await saveIllustration(topicId, sourceUrl, fetchFn);
       replacements.set(sourceUrl, localUrl);
-    } catch {
+      saved += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "download failed";
+      failed.push(`${sourceUrl}: ${message}`);
       replacements.set(sourceUrl, null);
     }
   }
 
   let boardHtml = replaceImgSources(html, replacements);
   boardHtml = boardHtml.replace(/<figure\b[^>]*>\s*<\/figure>/gi, "");
-  return boardHtml.trim();
+  return {
+    html: boardHtml.trim(),
+    attempted: externalUrls.length,
+    saved,
+    failed,
+    enrichedFromStories: 0,
+  };
 }

@@ -6,6 +6,8 @@ import { afterEach, describe, it } from "node:test";
 
 import {
   clearTopicIllustrations,
+  enrichHtmlWithStoryIllustrations,
+  extractOgImageFromHtml,
   illustrationPublicUrl,
   isAllowedBoardIllustrationSrc,
   prepareBoardHtmlWithIllustrations,
@@ -60,10 +62,12 @@ describe("topic-illustrations", () => {
 
     const html =
       '<p><strong>Headline</strong></p><figure><img src="https://cdn.test/story.png"/><figcaption>Launch</figcaption></figure>';
-    const boardHtml = await prepareBoardHtmlWithIllustrations(TOPIC_ID, html, fetchFn);
+    const prepared = await prepareBoardHtmlWithIllustrations(TOPIC_ID, html, fetchFn);
 
-    assert.match(boardHtml, /\/api\/illustrations\//);
-    assert.doesNotMatch(boardHtml, /https:\/\/cdn\.test/);
+    assert.match(prepared.html, /\/api\/illustrations\//);
+    assert.doesNotMatch(prepared.html, /https:\/\/cdn\.test/);
+    assert.equal(prepared.attempted, 1);
+    assert.equal(prepared.saved, 1);
 
     const files = await readdir(path.join(resolveIllustrationsRoot(), TOPIC_ID));
     assert.equal(files.length, 1);
@@ -99,5 +103,33 @@ describe("topic-illustrations", () => {
     assert.equal(saved.length, 1);
     const bytes = await readFile(path.join(tempRoot, TOPIC_ID, saved[0]!));
     assert.equal(bytes.toString(), "bytes");
+  });
+
+  it("extracts og:image from article HTML", () => {
+    const image = extractOgImageFromHtml(
+      '<html><head><meta property="og:image" content="https://cdn.test/hero.jpg"/></head></html>',
+      "https://news.test/story",
+    );
+    assert.equal(image, "https://cdn.test/hero.jpg");
+  });
+
+  it("injects og:image figures when the agent omitted illustrations", async () => {
+    const fetchFn = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://news.test/story-one") {
+        return new Response(
+          '<html><head><meta property="og:image" content="https://cdn.test/hero.jpg"/></head></html>',
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      return new Response("missing", { status: 404 });
+    }) as typeof fetch;
+
+    const html =
+      '<p><strong>Big launch</strong> — details. <a href="https://news.test/story-one">Kommersant</a></p>';
+    const enriched = await enrichHtmlWithStoryIllustrations(html, fetchFn);
+    assert.equal(enriched.injected, 1);
+    assert.match(enriched.html, /<figure><img src="https:\/\/cdn\.test\/hero\.jpg"\/>/);
+    assert.match(enriched.html, /<figcaption>Kommersant<\/figcaption>/);
   });
 });

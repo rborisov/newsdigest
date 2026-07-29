@@ -2,8 +2,10 @@ import { PrismaClient, TriggerType } from "@prisma/client";
 
 import { formatIndexLinkLabel } from "./digest-display";
 import { prisma as defaultPrisma } from "./db";
+import { appendJobLogLine } from "./job-logs";
 import {
   clearTopicIllustrations,
+  enrichHtmlWithStoryIllustrations,
   prepareBoardHtmlWithIllustrations,
   stripIllustrationsForTelegraph,
 } from "./topic-illustrations";
@@ -848,22 +850,57 @@ export async function publishDigest(
   deps: TelegraphDeps = {},
 ): Promise<PublishDigestResult> {
   const db = deps.prisma ?? defaultPrisma;
-  const fetchFn = deps.fetchFn;
+  const fetchFn = deps.fetchFn ?? fetch;
   const accessToken = await resolveAccessToken(db);
   const { authorName, authorUrl } = await loadAuthorFields(db);
 
-  const topicId = input.topicId?.trim() || null;
-  let telegraphHtml = stripIllustrationsForTelegraph(input.html);
+  let topicId = input.topicId?.trim() || null;
+  if (!topicId && input.topicName.trim()) {
+    const topic = await db.topic.findFirst({
+      where: { name: input.topicName.trim() },
+      select: { id: true },
+    });
+    topicId = topic?.id ?? null;
+  }
+
+  let sourceHtml = input.html;
+  let enrichedFromStories = 0;
+
+  if (topicId) {
+    const enriched = await enrichHtmlWithStoryIllustrations(sourceHtml, fetchFn);
+    sourceHtml = enriched.html;
+    enrichedFromStories = enriched.injected;
+    if (enriched.injected > 0) {
+      appendJobLogLine(
+        input.jobId,
+        `illustrations: injected ${enriched.injected} og:image figure(s) for topic ${input.topicName}`,
+        input.stepId ?? undefined,
+      );
+    }
+  }
+
+  let telegraphHtml = stripIllustrationsForTelegraph(sourceHtml);
   let boardHtml = telegraphHtml;
 
   if (topicId) {
     await clearTopicIllustrations(topicId);
-    boardHtml = await prepareBoardHtmlWithIllustrations(
-      topicId,
-      input.html,
-      fetchFn ?? fetch,
-    );
+    const prepared = await prepareBoardHtmlWithIllustrations(topicId, sourceHtml, fetchFn);
+    boardHtml = prepared.html;
     telegraphHtml = stripIllustrationsForTelegraph(boardHtml);
+    prepared.enrichedFromStories = enrichedFromStories;
+
+    appendJobLogLine(
+      input.jobId,
+      `illustrations: attempted=${prepared.attempted} saved=${prepared.saved} enriched=${prepared.enrichedFromStories}` +
+        (prepared.failed.length > 0 ? ` failed=${prepared.failed.join("; ")}` : ""),
+      input.stepId ?? undefined,
+    );
+  } else {
+    appendJobLogLine(
+      input.jobId,
+      `illustrations: skipped (no topicId for ${input.topicName})`,
+      input.stepId ?? undefined,
+    );
   }
 
   const digest = await createPage({

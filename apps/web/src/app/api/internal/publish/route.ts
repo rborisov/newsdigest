@@ -1,4 +1,4 @@
-import { GenerationJobStatus, TriggerType } from "@prisma/client";
+import { GenerationJobStatus, GenerationStepKind, GenerationStepStatus, TriggerType } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import {
@@ -9,7 +9,10 @@ import {
   type StoryFingerprint,
 } from "@/lib/dedup";
 import { prisma } from "@/lib/db";
-import { markMergeStepCompleted, markMergeStepFailed } from "@/lib/generation-pipeline";
+import {
+  completeTopicPublishStep,
+  failTopicPublishStep,
+} from "@/lib/generation-pipeline";
 import {
   buildExistingPublishResponse,
   getPublishSoftFailReason,
@@ -68,6 +71,45 @@ async function findExistingTopicPage(params: {
     orderBy: { publishedAt: "desc" },
     include: { indexPage: true },
   });
+}
+
+async function resolveTopicPublishStepId(
+  jobId: string,
+  stepId: string | null,
+  topicName: string,
+): Promise<string | null> {
+  if (stepId) {
+    return stepId;
+  }
+
+  const step = await prisma.generationStep.findFirst({
+    where: {
+      jobId,
+      kind: GenerationStepKind.topic_publish,
+      status: {
+        in: [GenerationStepStatus.running, GenerationStepStatus.pending],
+      },
+      topicName,
+    },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true },
+  });
+
+  return step?.id ?? null;
+}
+
+async function advanceAfterPublish(
+  jobId: string,
+  stepId: string | null,
+  topicName: string,
+  note?: string,
+) {
+  const resolvedStepId = await resolveTopicPublishStepId(jobId, stepId, topicName);
+  if (!resolvedStepId) {
+    return null;
+  }
+
+  return completeTopicPublishStep(jobId, resolvedStepId, {}, note ? { note } : {});
 }
 
 export async function POST(request: Request) {
@@ -135,15 +177,19 @@ export async function POST(request: Request) {
     const indexUrl = page.indexPage?.telegraphUrl ?? meta?.currentIndexUrl ?? "";
     const indexPath = page.indexPage?.telegraphPath ?? meta?.currentIndexPath ?? "";
 
-    return NextResponse.json(
-      buildExistingPublishResponse(jobId, {
+    const advance = await advanceAfterPublish(jobId, stepId, topicName);
+
+    return NextResponse.json({
+      ...buildExistingPublishResponse(jobId, {
         topicPageId: page.id,
         digestUrl: page.telegraphUrl,
         digestPath: page.telegraphPath,
         indexUrl,
         indexPath,
       }),
-    );
+      ...(advance?.ok && advance.advanced ? { advanced: true, nextStepId: advance.nextStepId } : {}),
+      ...(advance?.ok && advance.jobCompleted ? { jobCompleted: true } : {}),
+    });
   }
 
   if (shouldReturnLegacyPublish(job.status, job.publishedPage)) {
@@ -175,16 +221,11 @@ export async function POST(request: Request) {
     try {
       const page = existingTopicPage!;
       const index = await linkDigestToIndex(page.id);
+      const advance = await advanceAfterPublish(jobId, stepId, topicName);
 
-      await prisma.generationJob.update({
-        where: { id: jobId },
-        data: {
-          status: GenerationJobStatus.completed,
-          error: null,
-        },
-      });
-
-      await markMergeStepCompleted(jobId);
+      if (advance && !advance.ok) {
+        return NextResponse.json({ error: advance.error, jobId }, { status: 503 });
+      }
 
       return NextResponse.json({
         ok: true,
@@ -196,9 +237,12 @@ export async function POST(request: Request) {
         indexPath: index.indexPath,
         topicPageId: page.id,
         publishedPageId: page.id,
+        ...(advance?.ok && advance.advanced ? { advanced: true, nextStepId: advance.nextStepId } : {}),
+        ...(advance?.ok && advance.jobCompleted ? { jobCompleted: true } : {}),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Publish failed.";
+      await failTopicPublishStep(jobId, stepId, message);
       await prisma.generationJob.update({
         where: { id: jobId },
         data: {
@@ -206,7 +250,6 @@ export async function POST(request: Request) {
           error: message,
         },
       });
-      await markMergeStepFailed(jobId, message);
 
       return NextResponse.json({ error: message, jobId }, { status: 502 });
     }
@@ -225,8 +268,6 @@ export async function POST(request: Request) {
         },
       });
 
-      await markMergeStepCompleted(jobId);
-
       return NextResponse.json({
         ok: true,
         jobId,
@@ -246,7 +287,6 @@ export async function POST(request: Request) {
           error: message,
         },
       });
-      await markMergeStepFailed(jobId, message);
 
       return NextResponse.json({ error: message, jobId }, { status: 502 });
     }
@@ -264,16 +304,21 @@ export async function POST(request: Request) {
   const softFailReason = getPublishSoftFailReason(stories, knownStories);
   if (softFailReason) {
     const message = PUBLISH_SOFT_FAIL_MESSAGES[softFailReason];
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: {
-        status: GenerationJobStatus.failed,
-        error: message,
-      },
-    });
-    await markMergeStepFailed(jobId, message);
+    const advance = await advanceAfterPublish(jobId, stepId, topicName, message);
 
-    return NextResponse.json({ error: message, jobId, softFail: true }, { status: 409 });
+    if (advance && !advance.ok) {
+      return NextResponse.json({ error: advance.error, jobId }, { status: 503 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      jobId,
+      softFail: true,
+      reason: softFailReason,
+      message,
+      ...(advance?.ok && advance.advanced ? { advanced: true, nextStepId: advance.nextStepId } : {}),
+      ...(advance?.ok && advance.jobCompleted ? { jobCompleted: true } : {}),
+    });
   }
 
   const otherInProgressPublish = await prisma.topicPage.findFirst({
@@ -325,14 +370,11 @@ export async function POST(request: Request) {
       triggeredBy,
     });
 
-    await prisma.generationJob.update({
-      where: { id: jobId },
-      data: {
-        status: GenerationJobStatus.completed,
-        error: null,
-      },
-    });
-    await markMergeStepCompleted(jobId);
+    const advance = await advanceAfterPublish(jobId, stepId, topicName);
+
+    if (advance && !advance.ok) {
+      return NextResponse.json({ error: advance.error, jobId }, { status: 503 });
+    }
 
     return NextResponse.json({
       ok: true,
@@ -343,9 +385,12 @@ export async function POST(request: Request) {
       indexPath: result.indexPath,
       topicPageId: result.topicPageId,
       publishedPageId: result.topicPageId,
+      ...(advance?.ok && advance.advanced ? { advanced: true, nextStepId: advance.nextStepId } : {}),
+      ...(advance?.ok && advance.jobCompleted ? { jobCompleted: true } : {}),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Publish failed.";
+    await failTopicPublishStep(jobId, stepId, message);
     await prisma.generationJob.update({
       where: { id: jobId },
       data: {
@@ -353,7 +398,6 @@ export async function POST(request: Request) {
         error: message,
       },
     });
-    await markMergeStepFailed(jobId, message);
 
     return NextResponse.json({ error: message, jobId }, { status: 502 });
   }

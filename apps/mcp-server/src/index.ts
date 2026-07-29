@@ -16,16 +16,6 @@ type PublishResponse = {
   idempotent?: boolean;
 };
 
-type SaveDraftResponse = {
-  ok?: boolean;
-  error?: string;
-  jobId?: string;
-  stepId?: string;
-  nextStepId?: string | null;
-  nextKind?: string | null;
-  advanced?: boolean;
-};
-
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -54,7 +44,7 @@ function createServer(): McpServer {
     "save_topic_draft",
     {
       description:
-        "Save a single-topic HTML draft for the current generation pipeline step. Does not publish to Telegra.ph. Call once per topic_draft step; the portal then starts the next step.",
+        "Deprecated — per-topic publish steps call publish_digest_page directly. Do not use.",
       inputSchema: {
         jobId: z.string().min(1).describe("Generation job ID from the agent prompt"),
         topic: z.string().min(1).describe("Topic name exactly as given in the prompt"),
@@ -65,58 +55,22 @@ function createServer(): McpServer {
           .describe("Optional story fingerprints for this topic draft"),
       },
     },
-    async ({ jobId, topic, html, stories }) => {
-      const response = await fetch(`${portalBaseUrl()}/api/internal/save-topic-draft`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-key": requireEnv("INTERNAL_API_KEY"),
+    async () => ({
+      content: [
+        {
+          type: "text",
+          text: "save_topic_draft is deprecated. Call publish_digest_page for this topic publish step instead.",
         },
-        body: JSON.stringify({
-          jobId,
-          topic,
-          html,
-          ...(stories && stories.length > 0 ? { stories } : {}),
-        }),
-      });
-
-      const data = (await response.json().catch(() => ({}))) as SaveDraftResponse;
-
-      if (!response.ok) {
-        const message = data.error ?? `Save draft failed with status ${response.status}`;
-        return {
-          content: [{ type: "text", text: message }],
-          isError: true,
-        };
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                ok: true,
-                jobId: data.jobId ?? jobId,
-                stepId: data.stepId,
-                nextStepId: data.nextStepId ?? null,
-                nextKind: data.nextKind ?? null,
-                advanced: data.advanced ?? false,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
-    },
+      ],
+      isError: true,
+    }),
   );
 
   server.registerTool(
     "publish_digest_page",
     {
       description:
-        "Publish a news digest HTML page to Telegra.ph via the portal internal API. Use only on the final merge_publish step after all topic drafts are saved.",
+        "Publish a single-topic news digest HTML page to Telegra.ph via the portal internal API. Call once per topic_publish step with that topic's HTML only.",
       inputSchema: {
         jobId: z.string().min(1).describe("Generation job ID from the agent prompt"),
         stepId: z.string().optional().describe("Generation step ID for this topic publish"),

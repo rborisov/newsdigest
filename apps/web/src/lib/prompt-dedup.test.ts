@@ -13,9 +13,7 @@ import {
 import {
   applyPromptPlaceholders,
   appendJobMetadata,
-  appendTopicDraftMetadata,
-  buildMergePromptBody,
-  formatMergeDrafts,
+  appendTopicPublishMetadata,
   formatPromptDate,
   formatTopicWithKeywords,
   formatTopicsList,
@@ -161,47 +159,17 @@ describe("prompt", () => {
     });
   });
 
-  describe("appendTopicDraftMetadata", () => {
-    it("requires save_topic_draft and forbids publish", () => {
-      const prompt = appendTopicDraftMetadata("Base", "job_1", "Open RAN");
-      assert.match(prompt, /save_topic_draft/);
-      assert.match(prompt, /Topic name \(pass exactly to save_topic_draft\): Open RAN/);
-      assert.match(prompt, /Do NOT call publish_digest_page/);
+  describe("appendTopicPublishMetadata", () => {
+    it("requires publish_digest_page and forbids save_topic_draft", () => {
+      const prompt = appendTopicPublishMetadata("Base", "job_1", "step_1", "Open RAN");
+      assert.match(prompt, /publish_digest_page/);
+      assert.match(prompt, /Generation step ID: step_1/);
+      assert.match(prompt, /Topic name \(pass exactly to publish_digest_page\): Open RAN/);
+      assert.match(prompt, /Do NOT call save_topic_draft/);
+      assert.match(prompt, /Do NOT include other topics/);
       assert.match(prompt, /<h3>Open RAN<\/h3>/);
       assert.match(prompt, /Do NOT use <h1> or <h2>/);
-    });
-  });
-
-  describe("merge draft helpers", () => {
-    it("formats draft sections", () => {
-      const formatted = formatMergeDrafts([
-        { topicName: "A", html: "<p>one</p>" },
-        { topicName: "B", html: "" },
-      ]);
-      assert.match(formatted, /## Topic: A/);
-      assert.match(formatted, /<p>one<\/p>/);
-      assert.match(formatted, /## Topic: B/);
-      assert.match(formatted, /\(empty draft\)/);
-    });
-
-    it("builds merge body with excludes and drafts", () => {
-      const body = buildMergePromptBody(
-        {
-          topics: "",
-          periodHours: 24,
-          date: "2026-07-28",
-          excludeStories: "(none)",
-        },
-        [{ topicName: "LEO", html: "<p>Starlink</p>" }],
-      );
-      assert.match(body, /merging topic drafts/i);
-      assert.match(body, /## Topic: LEO/);
-      assert.match(body, /EXCLUDE_STORIES/);
-      assert.match(body, /Starlink/);
-      assert.match(body, /<h3>Topic Name<\/h3>/);
-      assert.match(body, /Put <hr\/> between topics/);
-      assert.match(body, /TITLE for publish_digest_page/);
-      assert.match(body, /\{HH:MM\} UTC/);
+      assert.match(prompt, /Open RAN · \{date\} \{HH:MM\} UTC/);
     });
   });
 });

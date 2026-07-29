@@ -22,12 +22,6 @@ export type PromptPlaceholders = {
   excludeStories: string;
 };
 
-export type MergeDraftSection = {
-  topicName: string;
-  html: string;
-  storiesJson?: string | null;
-};
-
 export function formatTopicsList(topicNames: string[]): string {
   if (topicNames.length === 0) {
     return "(no topics enabled)";
@@ -79,9 +73,10 @@ export function appendJobMetadata(
   return lines.join("\n");
 }
 
-export function appendTopicDraftMetadata(
+export function appendTopicPublishMetadata(
   prompt: string,
   jobId: string,
+  stepId: string,
   topicName: string,
   triggeredBy?: string,
 ): string {
@@ -89,23 +84,28 @@ export function appendTopicDraftMetadata(
     prompt.trim(),
     "",
     "---",
-    "THIS IS A SINGLE-TOPIC DRAFT STEP (not the final publish).",
+    "THIS IS A SINGLE-TOPIC PUBLISH STEP.",
     `Generation job ID: ${jobId}`,
-    `Topic name (pass exactly to save_topic_draft): ${topicName}`,
+    `Generation step ID: ${stepId}`,
+    `Topic name (pass exactly to publish_digest_page): ${topicName}`,
     "Research ONLY this topic for the lookback period.",
+    "Do NOT include other topics in the HTML or title.",
     "",
     "HTML FORMAT (required — Telegra.ph only supports these tags):",
     `- Start with <h3>${topicName}</h3>`,
     "- One <p> per story: <p><strong>Headline</strong> — 1–3 sentence summary. <a href=\"URL\">Publisher</a></p>",
     "- Use a real headline in <strong>; link text should be the publisher/site name (not \"Source\")",
     "- Separate stories with their own <p> tags (never glue headlines together)",
-    "- Optional: <hr/> at the end of the topic section",
     "- Do NOT use <h1> or <h2> (they are stripped); use <h3> only",
     "- If there is no relevant news: <h3>…</h3><p><em>No notable stories in the lookback window.</em></p>",
     "",
-    `Call save_topic_draft with jobId "${jobId}", topic "${topicName}", html, and stories.`,
-    "Do NOT call publish_digest_page in this step.",
-    "Do not finish until save_topic_draft returns ok.",
+    "TITLE for publish_digest_page (required format):",
+    `${topicName} · {date} {HH:MM} UTC`,
+    "- Use today's date and current UTC clock time (hours:minutes)",
+    "",
+    `Call publish_digest_page with jobId "${jobId}", stepId "${stepId}", topicName "${topicName}", title, htmlContent, and stories.`,
+    "Do NOT call save_topic_draft.",
+    "Do not finish until publish_digest_page returns ok.",
   ];
 
   if (triggeredBy?.trim()) {
@@ -115,59 +115,7 @@ export function appendTopicDraftMetadata(
   return lines.join("\n");
 }
 
-export function formatMergeDrafts(drafts: MergeDraftSection[]): string {
-  if (drafts.length === 0) {
-    return "(no topic drafts)";
-  }
-
-  return drafts
-    .map((draft) => {
-      const body = draft.html.trim() || "(empty draft)";
-      return [`## Topic: ${draft.topicName}`, body].join("\n");
-    })
-    .join("\n\n");
-}
-
-export function buildMergePromptBody(placeholders: PromptPlaceholders, drafts: MergeDraftSection[]): string {
-  return [
-    "You are merging topic drafts into one news digest HTML page for Telegra.ph.",
-    "",
-    `Lookback period: ${placeholders.periodHours} hours`,
-    `Date: ${placeholders.date}`,
-    "",
-    "Merge the drafts below into ONE htmlContent string with this exact structure:",
-    "<p><em>24-hour lookback · {date}</em></p>",
-    "Then for each topic that has news:",
-    "  <h3>Topic Name</h3>",
-    "  <p><strong>Headline</strong> — summary. <a href=\"URL\">Publisher</a></p>",
-    "  <p>…next story…</p>",
-    "  <hr/>",
-    "",
-    "Rules:",
-    "- Keep all real stories and source links from the drafts",
-    "- One <h3> per topic; one <p> per story — never concatenate topics or headlines",
-    "- Put <hr/> between topics",
-    "- Do NOT use <h1>/<h2> (unsupported); use <h3> only",
-    "- Link text = publisher name; stories[].title = the headline (not \"Source\")",
-    "- Do not invent new stories; light copy-editing for consistency is OK",
-    "- Skip topics whose draft says there was no news",
-    "",
-    "TITLE for publish_digest_page (required format):",
-    `Digest · ${placeholders.date} {HH:MM} UTC · {Topic1} · {Topic2}`,
-    "- Include the current UTC clock time (hours:minutes)",
-    "- After the time, list 2–4 topic names that appear in this digest (short names)",
-    "- Do NOT use a bare title like \"News Digest — date\" or \"Daily Digest — date\"",
-    "",
-    "Do NOT include any story listed under EXCLUDE_STORIES.",
-    "",
-    "EXCLUDE_STORIES:",
-    placeholders.excludeStories,
-    "",
-    "TOPIC DRAFTS:",
-    formatMergeDrafts(drafts),
-  ].join("\n");
-}
-
+/** StoryIndex primary; PublishedStory fallback until legacy backfill completes. */
 export async function loadExcludeStories(
   deps: PromptDeps = {},
 ): Promise<StoryFingerprint[]> {
@@ -176,20 +124,55 @@ export async function loadExcludeStories(
   const since = new Date(now);
   since.setDate(since.getDate() - EXCLUDE_LOOKBACK_DAYS);
 
-  const rows = await db.publishedStory.findMany({
-    where: { firstSeenAt: { gte: since } },
-    orderBy: { firstSeenAt: "desc" },
-    take: EXCLUDE_MAX_STORIES,
-    select: {
-      title: true,
-      canonicalUrl: true,
-    },
-  });
+  const [storyIndexRows, publishedStoryRows] = await Promise.all([
+    db.storyIndex.findMany({
+      where: { firstSeenAt: { gte: since } },
+      orderBy: { firstSeenAt: "desc" },
+      take: EXCLUDE_MAX_STORIES,
+      select: {
+        title: true,
+        canonicalUrl: true,
+      },
+    }),
+    db.publishedStory.findMany({
+      where: { firstSeenAt: { gte: since } },
+      orderBy: { firstSeenAt: "desc" },
+      take: EXCLUDE_MAX_STORIES,
+      select: {
+        title: true,
+        canonicalUrl: true,
+      },
+    }),
+  ]);
 
-  return rows.map((row) => ({
-    title: row.title,
-    canonicalUrl: row.canonicalUrl,
-  }));
+  const seen = new Set<string>();
+  const result: StoryFingerprint[] = [];
+
+  for (const row of storyIndexRows) {
+    const key = row.canonicalUrl ?? row.title;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push({ title: row.title, canonicalUrl: row.canonicalUrl });
+    if (result.length >= EXCLUDE_MAX_STORIES) {
+      return result;
+    }
+  }
+
+  for (const row of publishedStoryRows) {
+    const key = row.canonicalUrl ?? row.title;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push({ title: row.title, canonicalUrl: row.canonicalUrl });
+    if (result.length >= EXCLUDE_MAX_STORIES) {
+      return result;
+    }
+  }
+
+  return result;
 }
 
 async function loadPromptConfig(deps: PromptDeps) {
@@ -230,8 +213,9 @@ export async function buildPrompt(
   return appendJobMetadata(assembled, jobId, triggeredBy);
 }
 
-export async function buildTopicDraftPrompt(
+export async function buildTopicPublishPrompt(
   jobId: string,
+  stepId: string,
   topic: Pick<Topic, "name" | "keywords">,
   deps: PromptDeps = {},
   triggeredBy?: string,
@@ -249,30 +233,5 @@ export async function buildTopicDraftPrompt(
     excludeStories: formatExcludeStories(excludeStories),
   });
 
-  return appendTopicDraftMetadata(assembled, jobId, topic.name, triggeredBy);
-}
-
-export async function buildMergePublishPrompt(
-  jobId: string,
-  drafts: MergeDraftSection[],
-  deps: PromptDeps = {},
-  triggeredBy?: string,
-): Promise<string> {
-  const now = deps.now ?? new Date();
-  const [promptConfig, excludeStories] = await Promise.all([
-    loadPromptConfig(deps),
-    loadExcludeStories(deps),
-  ]);
-
-  const body = buildMergePromptBody(
-    {
-      topics: "",
-      periodHours: promptConfig.periodHours,
-      date: formatPromptDate(now),
-      excludeStories: formatExcludeStories(excludeStories),
-    },
-    drafts,
-  );
-
-  return appendJobMetadata(body, jobId, triggeredBy);
+  return appendTopicPublishMetadata(assembled, jobId, stepId, topic.name, triggeredBy);
 }

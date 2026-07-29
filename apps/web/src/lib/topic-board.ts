@@ -92,7 +92,12 @@ export function selectBoardPages(
 export async function loadTopicBoard(
   prisma: PrismaClient,
   now = new Date(),
-): Promise<{ board: BoardCard[]; sidebar: SidebarItem[]; indexUrl: string }> {
+): Promise<{
+  board: BoardCard[];
+  sidebar: SidebarItem[];
+  indexUrl: string;
+  displayTimezone: string;
+}> {
   const staleDays = await getBoardStaleDays(prisma);
   const cutoff = boardCutoff(staleDays, now);
 
@@ -111,7 +116,7 @@ export async function loadTopicBoard(
     },
   };
 
-  const [meta, topics, boardPages, sidebarPages] = await Promise.all([
+  const [meta, topics, boardPages, sidebarPages, promptConfig] = await Promise.all([
     prisma.telegraphMeta.findUnique({ where: { id: "default" } }),
     prisma.topic.findMany({
       where: { enabled: true },
@@ -137,6 +142,10 @@ export async function loadTopicBoard(
           select: { title: true },
         },
       },
+    }),
+    prisma.promptConfig.findUnique({
+      where: { id: "default" },
+      select: { displayTimezone: true },
     }),
   ]);
 
@@ -171,5 +180,6 @@ export async function loadTopicBoard(
     board,
     sidebar,
     indexUrl: meta?.currentIndexUrl?.trim() ?? "",
+    displayTimezone: promptConfig?.displayTimezone?.trim() || "UTC",
   };
 }

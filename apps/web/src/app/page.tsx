@@ -9,7 +9,7 @@ import { sanitizeDigestHtml } from "@/lib/sanitize-digest-html";
 import { loadTopicBoard } from "@/lib/topic-board";
 
 export default async function HomePage() {
-  const [session, { board, sidebar, indexUrl }] = await Promise.all([
+  const [session, { board, sidebar, indexUrl, displayTimezone }] = await Promise.all([
     auth(),
     loadTopicBoard(prisma),
   ]);
@@ -77,7 +77,7 @@ export default async function HomePage() {
                       rel="noopener noreferrer"
                     >
                       <div className="digest-meta">
-                        <span className="digest-time">{formatDigestWhen(page.publishedAt)}</span>
+                        <span className="digest-time">{formatDigestWhen(page.publishedAt, displayTimezone)}</span>
                       </div>
                       <div className="digest-title">{page.topicName}</div>
                       {tags.length > 0 ? (
@@ -110,7 +110,7 @@ export default async function HomePage() {
                     <div className="board-card-header">
                       <h3 className="board-topic">{card.topicName}</h3>
                       <time className="digest-time" dateTime={card.publishedAt.toISOString()}>
-                        {formatDigestWhen(card.publishedAt)}
+                        {formatDigestWhen(card.publishedAt, displayTimezone)}
                       </time>
                     </div>
                     {body ? (

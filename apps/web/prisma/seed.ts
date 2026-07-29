@@ -4,6 +4,8 @@ const prisma = new PrismaClient();
 
 const DEFAULT_PROMPT_TEMPLATE = `You are a news digest editor. Compile a concise digest of recent news for the topics below.
 
+Write the digest in {{LANGUAGE}}.
+
 Topics:
 {{TOPICS}}
 
@@ -49,6 +51,8 @@ async function main() {
       template: DEFAULT_PROMPT_TEMPLATE,
       periodHours: 24,
       boardStaleDays: 1,
+      displayTimezone: "UTC",
+      language: "English",
     },
   });
 

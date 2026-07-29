@@ -14,9 +14,10 @@ import {
 describe("digest-display", () => {
   const when = new Date("2026-07-28T13:45:00.000Z");
 
-  it("formats when with date and time", () => {
-    assert.match(formatDigestWhen(when), /2026/);
-    assert.match(formatDigestClock(when), /\d/);
+  it("formats when with date and time in the given timezone", () => {
+    assert.match(formatDigestWhen(when, "UTC"), /2026/);
+    assert.match(formatDigestWhen(when, "Europe/Moscow"), /2026/);
+    assert.match(formatDigestClock(when, "UTC"), /\d/);
   });
 
   it("hides generic and agent Digest · UTC titles on the portal list", () => {
@@ -75,21 +76,24 @@ describe("digest-display", () => {
     ]);
   });
 
-  it("builds index link labels with time and story tags", () => {
-    assert.equal(
-      formatIndexLinkLabel({
-        title: "Daily Digest — 2026-07-28",
-        createdAt: when,
-        storyTitles: ["Amazon Leo filing", "Open RAN trial"],
-      }),
-      "2026-07-28 13:45 UTC · Amazon Leo filing · Open RAN trial",
-    );
-    assert.equal(
-      formatIndexLinkLabel({
-        title: "Digest · 2026-07-28 13:45 UTC · Private 5G · NTN",
-        createdAt: when,
-      }),
-      "2026-07-28 13:45 UTC · Private 5G · NTN",
-    );
+  it("builds index link labels with local time and story tags", () => {
+    const label = formatIndexLinkLabel({
+      title: "Daily Digest — 2026-07-28",
+      createdAt: when,
+      storyTitles: ["Amazon Leo filing", "Open RAN trial"],
+      timeZone: "UTC",
+    });
+    assert.match(label, /2026/);
+    assert.match(label, /Amazon Leo filing/);
+    assert.match(label, /Open RAN trial/);
+    assert.doesNotMatch(label, / UTC/);
+
+    const topicLabel = formatIndexLinkLabel({
+      title: "Digest · 2026-07-28 13:45 UTC · Private 5G · NTN",
+      createdAt: when,
+      timeZone: "UTC",
+    });
+    assert.match(topicLabel, /Private 5G/);
+    assert.match(topicLabel, /NTN/);
   });
 });

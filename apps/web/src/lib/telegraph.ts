@@ -564,6 +564,12 @@ async function updateIndexAfterPublishUnlocked(
       })
     : null;
 
+  const promptConfig = await db.promptConfig.findUnique({
+    where: { id: "default" },
+    select: { displayTimezone: true },
+  });
+  const displayTimezone = promptConfig?.displayTimezone?.trim() || "UTC";
+
   const toIndexLink = (page: {
     title: string;
     telegraphUrl: string;
@@ -575,6 +581,7 @@ async function updateIndexAfterPublishUnlocked(
       title: page.title,
       createdAt: page.publishedAt,
       storyTitles: page.storyTitles ?? page.stories?.map((story) => story.title) ?? [],
+      timeZone: displayTimezone,
     }),
     url: page.telegraphUrl,
   });

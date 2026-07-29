@@ -109,6 +109,8 @@ function createMockPipelineDb(initial: {
         template: "Topics:\n{{TOPICS}}\nHours: {{PERIOD_HOURS}}\nDate: {{DATE}}\nExclude:\n{{EXCLUDE_STORIES}}",
         periodHours: 24,
         boardStaleDays: 1,
+        displayTimezone: "UTC",
+        language: "English",
         createdAt: new Date(),
         updatedAt: new Date(),
       }),

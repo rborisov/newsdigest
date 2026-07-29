@@ -20,6 +20,7 @@ export type PromptPlaceholders = {
   periodHours: number;
   date: string;
   excludeStories: string;
+  language: string;
 };
 
 export function formatTopicsList(topicNames: string[]): string {
@@ -38,8 +39,17 @@ export function formatTopicWithKeywords(topic: Pick<Topic, "name" | "keywords">)
   return `- ${topic.name}\n  Keywords: ${keywords}`;
 }
 
-export function formatPromptDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+export function formatPromptDate(date: Date, timeZone = "UTC"): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timeZone.trim() || "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
 }
 
 export function applyPromptPlaceholders(
@@ -50,6 +60,7 @@ export function applyPromptPlaceholders(
     .replaceAll("{{TOPICS}}", placeholders.topics)
     .replaceAll("{{PERIOD_HOURS}}", String(placeholders.periodHours))
     .replaceAll("{{DATE}}", placeholders.date)
+    .replaceAll("{{LANGUAGE}}", placeholders.language)
     .replaceAll("{{EXCLUDE_STORIES}}", placeholders.excludeStories);
 }
 
@@ -78,8 +89,14 @@ export function appendTopicPublishMetadata(
   jobId: string,
   stepId: string,
   topicName: string,
-  triggeredBy?: string,
+  options: {
+    triggeredBy?: string;
+    displayTimezone?: string;
+    language?: string;
+  } = {},
 ): string {
+  const timeZone = options.displayTimezone?.trim() || "UTC";
+  const language = options.language?.trim() || "English";
   const lines = [
     prompt.trim(),
     "",
@@ -88,6 +105,7 @@ export function appendTopicPublishMetadata(
     `Generation job ID: ${jobId}`,
     `Generation step ID: ${stepId}`,
     `Topic name (pass exactly to publish_digest_page): ${topicName}`,
+    `Output language: ${language}`,
     "Research ONLY this topic for the lookback period.",
     "Do NOT include other topics in the HTML or title.",
     "",
@@ -98,18 +116,19 @@ export function appendTopicPublishMetadata(
     "- Separate stories with their own <p> tags (never glue headlines together)",
     "- Do NOT use <h1> or <h2> (they are stripped); use <h3> only",
     "- If there is no relevant news: <h3>…</h3><p><em>No notable stories in the lookback window.</em></p>",
+    `- Write the digest body in ${language}`,
     "",
     "TITLE for publish_digest_page (required format):",
-    `${topicName} · {date} {HH:MM} UTC`,
-    "- Use today's date and current UTC clock time (hours:minutes)",
+    `${topicName} · {date} {HH:MM}`,
+    `- Use today's date and current clock time in timezone ${timeZone} (not UTC unless that is the configured zone)`,
     "",
     `Call publish_digest_page with jobId "${jobId}", stepId "${stepId}", topicName "${topicName}", title, htmlContent, and stories.`,
     "Do NOT call save_topic_draft.",
     "Do not finish until publish_digest_page returns ok.",
   ];
 
-  if (triggeredBy?.trim()) {
-    lines.push(`Triggered by: ${triggeredBy.trim()}`);
+  if (options.triggeredBy?.trim()) {
+    lines.push(`Triggered by: ${options.triggeredBy.trim()}`);
   }
 
   return lines.join("\n");
@@ -206,7 +225,8 @@ export async function buildPrompt(
   const assembled = applyPromptPlaceholders(promptConfig.template, {
     topics: formatTopicsList(topics.map((topic) => topic.name)),
     periodHours: promptConfig.periodHours,
-    date: formatPromptDate(now),
+    date: formatPromptDate(now, promptConfig.displayTimezone),
+    language: promptConfig.language || "English",
     excludeStories: formatExcludeStories(excludeStories),
   });
 
@@ -229,9 +249,14 @@ export async function buildTopicPublishPrompt(
   const assembled = applyPromptPlaceholders(promptConfig.template, {
     topics: formatTopicWithKeywords(topic),
     periodHours: promptConfig.periodHours,
-    date: formatPromptDate(now),
+    date: formatPromptDate(now, promptConfig.displayTimezone),
+    language: promptConfig.language || "English",
     excludeStories: formatExcludeStories(excludeStories),
   });
 
-  return appendTopicPublishMetadata(assembled, jobId, stepId, topic.name, triggeredBy);
+  return appendTopicPublishMetadata(assembled, jobId, stepId, topic.name, {
+    triggeredBy,
+    displayTimezone: promptConfig.displayTimezone,
+    language: promptConfig.language,
+  });
 }

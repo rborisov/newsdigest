@@ -58,11 +58,15 @@ model Schedule {
 }
 
 model PromptConfig {
-  id             String @id @default("default")
-  template       String
-  periodHours    Int    @default(24)
-  boardStaleDays Int    @default(1)
-  updatedAt      DateTime @updatedAt
+  id              String @id @default("default")
+  template        String
+  periodHours     Int    @default(24)
+  boardStaleDays  Int    @default(1)
+  /// IANA timezone for portal/index clocks and agent title times (e.g. Europe/Moscow).
+  displayTimezone String @default("UTC")
+  /// Free-text language for {{LANGUAGE}} in the prompt (e.g. Russian, English).
+  language        String @default("English")
+  updatedAt       DateTime @updatedAt
 }
 
 model TelegraphMeta {

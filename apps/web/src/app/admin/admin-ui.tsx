@@ -34,6 +34,8 @@ type PromptConfigRow = {
   template: string;
   periodHours: number;
   boardStaleDays: number;
+  displayTimezone: string;
+  language: string;
 };
 
 type TelegraphMetaRow = {
@@ -530,6 +532,8 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
   const [template, setTemplate] = useState(initialPrompt.template);
   const [periodHours, setPeriodHours] = useState(String(initialPrompt.periodHours));
   const [boardStaleDays, setBoardStaleDays] = useState(String(initialPrompt.boardStaleDays));
+  const [displayTimezone, setDisplayTimezone] = useState(initialPrompt.displayTimezone || "UTC");
+  const [language, setLanguage] = useState(initialPrompt.language || "English");
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -546,6 +550,8 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
         template,
         periodHours: Number(periodHours),
         boardStaleDays: Number(boardStaleDays),
+        displayTimezone,
+        language,
       }),
     });
 
@@ -563,7 +569,8 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Prompt &amp; period</h2>
       <p style={messageStyle}>
-        Placeholders: {"{{TOPICS}}"}, {"{{PERIOD_HOURS}}"}, {"{{DATE}}"}, {"{{EXCLUDE_STORIES}}"}
+        Placeholders: {"{{TOPICS}}"}, {"{{PERIOD_HOURS}}"}, {"{{DATE}}"}, {"{{LANGUAGE}}"},{" "}
+        {"{{EXCLUDE_STORIES}}"}
       </p>
 
       <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "1rem" }}>
@@ -590,6 +597,26 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
               value={boardStaleDays}
               onChange={(event) => setBoardStaleDays(event.target.value)}
               style={{ ...inputStyle, maxWidth: "8rem" }}
+            />
+          </label>
+          <label style={fieldStyle}>
+            Display timezone (IANA)
+            <input
+              required
+              value={displayTimezone}
+              onChange={(event) => setDisplayTimezone(event.target.value)}
+              placeholder="Europe/Moscow"
+              style={{ ...inputStyle, minWidth: "12rem" }}
+            />
+          </label>
+          <label style={fieldStyle}>
+            Language ({"{{LANGUAGE}}"})
+            <input
+              required
+              value={language}
+              onChange={(event) => setLanguage(event.target.value)}
+              placeholder="Russian"
+              style={{ ...inputStyle, minWidth: "10rem" }}
             />
           </label>
         </div>

@@ -5,6 +5,15 @@ import { requireAdminApi } from "@/lib/require-admin";
 
 const PROMPT_ID = "default";
 
+function isValidIanaTimeZone(value: string): boolean {
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET() {
   const result = await requireAdminApi();
   if (result.error) {
@@ -29,6 +38,8 @@ export async function PATCH(request: Request) {
     template?: string;
     periodHours?: number;
     boardStaleDays?: number;
+    displayTimezone?: string;
+    language?: string;
   };
 
   const existing = await prisma.promptConfig.findUnique({ where: { id: PROMPT_ID } });
@@ -36,7 +47,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Prompt config not found." }, { status: 404 });
   }
 
-  const data: { template?: string; periodHours?: number; boardStaleDays?: number } = {};
+  const data: {
+    template?: string;
+    periodHours?: number;
+    boardStaleDays?: number;
+    displayTimezone?: string;
+    language?: string;
+  } = {};
 
   if (body.template !== undefined) {
     const template = body.template.trim();
@@ -64,6 +81,31 @@ export async function PATCH(request: Request) {
       );
     }
     data.boardStaleDays = body.boardStaleDays;
+  }
+
+  if (body.displayTimezone !== undefined) {
+    const displayTimezone = body.displayTimezone.trim();
+    if (!displayTimezone) {
+      return NextResponse.json({ error: "Display timezone is required." }, { status: 400 });
+    }
+    if (!isValidIanaTimeZone(displayTimezone)) {
+      return NextResponse.json(
+        { error: "Display timezone must be a valid IANA name (e.g. Europe/Moscow)." },
+        { status: 400 },
+      );
+    }
+    data.displayTimezone = displayTimezone;
+  }
+
+  if (body.language !== undefined) {
+    const language = body.language.trim();
+    if (!language) {
+      return NextResponse.json({ error: "Language is required." }, { status: 400 });
+    }
+    if (language.length > 80) {
+      return NextResponse.json({ error: "Language must be at most 80 characters." }, { status: 400 });
+    }
+    data.language = language;
   }
 
   const prompt = await prisma.promptConfig.update({

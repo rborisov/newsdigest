@@ -3,21 +3,46 @@
 const GENERIC_TITLE = /^(news|daily)\s*digest\b/i;
 const AGENT_DIGEST_TITLE = /^digest · .+ utc\b/i;
 
-export function formatDigestWhen(date: Date): string {
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+export function formatDigestWhen(date: Date, timeZone = "UTC"): string {
+  try {
+    return date.toLocaleString("en-GB", {
+      timeZone: timeZone.trim() || "UTC",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return date.toLocaleString("en-GB", {
+      timeZone: "UTC",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
 }
 
-export function formatDigestClock(date: Date): string {
-  return date.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+export function formatDigestClock(date: Date, timeZone = "UTC"): string {
+  try {
+    return date.toLocaleTimeString("en-GB", {
+      timeZone: timeZone.trim() || "UTC",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return date.toLocaleTimeString("en-GB", {
+      timeZone: "UTC",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
 }
 
 /**
@@ -62,8 +87,10 @@ export function formatIndexLinkLabel(input: {
   title: string;
   createdAt: Date;
   storyTitles?: string[];
+  timeZone?: string;
 }): string {
-  const when = input.createdAt.toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  const timeZone = input.timeZone?.trim() || "UTC";
+  const when = formatDigestWhen(input.createdAt, timeZone);
   const storyTags = digestContentTags(input.storyTitles ?? [], 3);
   const topics = topicsFromDigestTitle(input.title);
   const bits = storyTags.length > 0 ? storyTags : topics;

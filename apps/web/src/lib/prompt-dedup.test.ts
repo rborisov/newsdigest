@@ -121,11 +121,12 @@ describe("prompt", () => {
   describe("applyPromptPlaceholders", () => {
     it("replaces template placeholders", () => {
       const result = applyPromptPlaceholders(
-        "Topics:\n{{TOPICS}}\nHours: {{PERIOD_HOURS}}\nDate: {{DATE}}\nExclude:\n{{EXCLUDE_STORIES}}",
+        "Topics:\n{{TOPICS}}\nHours: {{PERIOD_HOURS}}\nDate: {{DATE}}\nLang: {{LANGUAGE}}\nExclude:\n{{EXCLUDE_STORIES}}",
         {
           topics: "- AI",
           periodHours: 24,
           date: "2026-07-28",
+          language: "Russian",
           excludeStories: "- https://a.test — Story",
         },
       );
@@ -133,6 +134,7 @@ describe("prompt", () => {
       assert.match(result, /- AI/);
       assert.match(result, /Hours: 24/);
       assert.match(result, /Date: 2026-07-28/);
+      assert.match(result, /Lang: Russian/);
       assert.match(result, /- https:\/\/a\.test — Story/);
       assert.doesNotMatch(result, /\{\{/);
     });
@@ -161,7 +163,10 @@ describe("prompt", () => {
 
   describe("appendTopicPublishMetadata", () => {
     it("requires publish_digest_page and forbids save_topic_draft", () => {
-      const prompt = appendTopicPublishMetadata("Base", "job_1", "step_1", "Open RAN");
+      const prompt = appendTopicPublishMetadata("Base", "job_1", "step_1", "Open RAN", {
+        displayTimezone: "Europe/Moscow",
+        language: "Russian",
+      });
       assert.match(prompt, /publish_digest_page/);
       assert.match(prompt, /Generation step ID: step_1/);
       assert.match(prompt, /Topic name \(pass exactly to publish_digest_page\): Open RAN/);
@@ -169,7 +174,10 @@ describe("prompt", () => {
       assert.match(prompt, /Do NOT include other topics/);
       assert.match(prompt, /<h3>Open RAN<\/h3>/);
       assert.match(prompt, /Do NOT use <h1> or <h2>/);
-      assert.match(prompt, /Open RAN · \{date\} \{HH:MM\} UTC/);
+      assert.match(prompt, /Open RAN · \{date\} \{HH:MM\}/);
+      assert.match(prompt, /timezone Europe\/Moscow/);
+      assert.match(prompt, /Output language: Russian/);
+      assert.match(prompt, /Write the digest body in Russian/);
     });
   });
 });

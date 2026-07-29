@@ -32,7 +32,13 @@ export default async function AdminPage() {
     }),
     prisma.promptConfig.findUnique({
       where: { id: "default" },
-      select: { template: true, periodHours: true, boardStaleDays: true },
+      select: {
+        template: true,
+        periodHours: true,
+        boardStaleDays: true,
+        displayTimezone: true,
+        language: true,
+      },
     }),
     prisma.telegraphMeta.findUnique({
       where: { id: "default" },

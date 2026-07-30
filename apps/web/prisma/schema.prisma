@@ -65,6 +65,8 @@ model Schedule {
   weekday       Int?
   /// When recurrence=interval_hours
   intervalHours Int?
+  /// Lookback for {{PERIOD_HOURS}}; null = use PromptConfig.periodHours
+  periodHours   Int?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

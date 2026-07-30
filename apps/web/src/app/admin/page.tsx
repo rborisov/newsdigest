@@ -37,6 +37,7 @@ export default async function AdminPage() {
         timeOfDay: true,
         weekday: true,
         intervalHours: true,
+        periodHours: true,
       },
     }),
     prisma.promptConfig.findUnique({

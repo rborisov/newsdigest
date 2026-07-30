@@ -44,6 +44,33 @@ export function formatTopicWithKeywords(topic: Pick<Topic, "name" | "keywords">)
   return `- ${topic.name}\n  Keywords: ${indented}`;
 }
 
+/** Schedule lookback when set; otherwise the global PromptConfig lookback. */
+export function resolveSchedulePeriodHours(
+  schedule: { periodHours?: number | null } | null | undefined,
+  defaultPeriodHours: number,
+): number {
+  const override = schedule?.periodHours;
+  if (typeof override === "number" && Number.isInteger(override) && override >= 1) {
+    return override;
+  }
+  return defaultPeriodHours;
+}
+
+/** Sensible lookback defaults by recurrence (for Admin UI suggestions). */
+export function suggestedPeriodHoursForSchedule(input: {
+  recurrence: string;
+  intervalHours?: number | null;
+}): number {
+  if (input.recurrence === "weekly") {
+    return 168;
+  }
+  if (input.recurrence === "interval_hours") {
+    const hours = input.intervalHours ?? 5;
+    return Math.max(1, Math.min(168, hours));
+  }
+  return 24;
+}
+
 export function formatPromptDate(date: Date, timeZone = "UTC"): string {
   try {
     return new Intl.DateTimeFormat("en-CA", {
@@ -247,19 +274,31 @@ export async function buildPrompt(
 export async function buildTopicPublishPrompt(
   jobId: string,
   stepId: string,
-  topic: Pick<Topic, "name" | "keywords">,
+  topic: Pick<Topic, "name" | "keywords" | "scheduleId">,
   deps: PromptDeps = {},
   triggeredBy?: string,
 ): Promise<string> {
   const now = deps.now ?? new Date();
-  const [promptConfig, excludeStories] = await Promise.all([
+  const db = deps.prisma ?? defaultPrisma;
+  const [promptConfig, excludeStories, schedule] = await Promise.all([
     loadPromptConfig(deps),
     loadExcludeStories(deps),
+    topic.scheduleId
+      ? db.schedule.findUnique({
+          where: { id: topic.scheduleId },
+          select: { periodHours: true },
+        })
+      : db.schedule.findFirst({
+          where: { isDefault: true },
+          select: { periodHours: true },
+        }),
   ]);
+
+  const periodHours = resolveSchedulePeriodHours(schedule, promptConfig.periodHours);
 
   const assembled = applyPromptPlaceholders(promptConfig.template, {
     topics: formatTopicWithKeywords(topic),
-    periodHours: promptConfig.periodHours,
+    periodHours,
     date: formatPromptDate(now, promptConfig.displayTimezone),
     language: promptConfig.language || "English",
     excludeStories: formatExcludeStories(excludeStories),

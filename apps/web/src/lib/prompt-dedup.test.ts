@@ -17,6 +17,8 @@ import {
   formatPromptDate,
   formatTopicWithKeywords,
   formatTopicsList,
+  resolveSchedulePeriodHours,
+  suggestedPeriodHoursForSchedule,
 } from "./prompt";
 
 describe("dedup", () => {
@@ -168,6 +170,28 @@ describe("prompt", () => {
 
     it("omits keywords line when empty", () => {
       assert.equal(formatTopicWithKeywords({ name: "Open RAN", keywords: "  " }), "- Open RAN");
+    });
+  });
+
+  describe("resolveSchedulePeriodHours", () => {
+    it("uses schedule lookback when set", () => {
+      assert.equal(resolveSchedulePeriodHours({ periodHours: 168 }, 24), 168);
+    });
+
+    it("falls back to global default when schedule lookback is null", () => {
+      assert.equal(resolveSchedulePeriodHours({ periodHours: null }, 24), 24);
+      assert.equal(resolveSchedulePeriodHours(null, 48), 48);
+    });
+  });
+
+  describe("suggestedPeriodHoursForSchedule", () => {
+    it("suggests 168 for weekly and interval for N-hours", () => {
+      assert.equal(suggestedPeriodHoursForSchedule({ recurrence: "weekly" }), 168);
+      assert.equal(suggestedPeriodHoursForSchedule({ recurrence: "daily" }), 24);
+      assert.equal(
+        suggestedPeriodHoursForSchedule({ recurrence: "interval_hours", intervalHours: 5 }),
+        5,
+      );
     });
   });
 

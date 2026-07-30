@@ -19,7 +19,32 @@ type ScheduleBody = {
   timeOfDay?: string;
   weekday?: number | null;
   intervalHours?: number | null;
+  periodHours?: number | null;
 };
+
+const MAX_SCHEDULE_PERIOD_HOURS = 720;
+
+function parsePeriodHours(
+  value: number | null | undefined,
+  { required }: { required: boolean },
+): { ok: true; value?: number | null } | { ok: false; error: string } {
+  if (value === undefined) {
+    if (required) {
+      return { ok: true, value: null };
+    }
+    return { ok: true };
+  }
+  if (value === null) {
+    return { ok: true, value: null };
+  }
+  if (!Number.isInteger(value) || value < 1 || value > MAX_SCHEDULE_PERIOD_HOURS) {
+    return {
+      ok: false,
+      error: `Lookback periodHours must be an integer from 1 to ${MAX_SCHEDULE_PERIOD_HOURS}, or empty for the global default.`,
+    };
+  }
+  return { ok: true, value };
+}
 
 function asRecurrence(value: string | undefined): ScheduleRecurrence | null {
   if (value === "daily" || value === "weekly" || value === "interval_hours") {
@@ -95,6 +120,11 @@ export async function POST(request: Request) {
     await clearOtherDefaults();
   }
 
+  const period = parsePeriodHours(body.periodHours, { required: true });
+  if (!period.ok) {
+    return NextResponse.json({ error: period.error }, { status: 400 });
+  }
+
   const schedule = await prisma.schedule.create({
     data: {
       name,
@@ -106,6 +136,7 @@ export async function POST(request: Request) {
       timeOfDay,
       weekday: recurrence === "weekly" ? (body.weekday ?? null) : null,
       intervalHours: recurrence === "interval_hours" ? (body.intervalHours ?? null) : null,
+      periodHours: period.value ?? null,
     },
   });
 
@@ -138,6 +169,7 @@ export async function PATCH(request: Request) {
     timeOfDay?: string;
     weekday?: number | null;
     intervalHours?: number | null;
+    periodHours?: number | null;
   } = {};
 
   if (body.name !== undefined) {
@@ -156,6 +188,16 @@ export async function PATCH(request: Request) {
     data.isDefault = body.isDefault;
     if (body.isDefault) {
       await clearOtherDefaults(body.id);
+    }
+  }
+
+  if (body.periodHours !== undefined) {
+    const period = parsePeriodHours(body.periodHours, { required: false });
+    if (!period.ok) {
+      return NextResponse.json({ error: period.error }, { status: 400 });
+    }
+    if (period.value !== undefined) {
+      data.periodHours = period.value;
     }
   }
 

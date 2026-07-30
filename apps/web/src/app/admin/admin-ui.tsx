@@ -35,6 +35,7 @@ type ScheduleRow = {
   timeOfDay: string;
   weekday: number | null;
   intervalHours: number | null;
+  periodHours: number | null;
 };
 
 type PromptConfigRow = {
@@ -601,7 +602,7 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
       <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "1rem" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
           <label style={fieldStyle}>
-            Lookback period (hours)
+            Default lookback (hours)
             <input
               type="number"
               min={1}
@@ -611,6 +612,9 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
               onChange={(event) => setPeriodHours(event.target.value)}
               style={{ ...inputStyle, maxWidth: "8rem" }}
             />
+            <span style={{ color: "#666", fontSize: "0.85rem" }}>
+              Used when a schedule has no lookback of its own.
+            </span>
           </label>
           <label style={fieldStyle}>
             Board stale days
@@ -995,6 +999,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
   const [timeOfDay, setTimeOfDay] = useState("09:00");
   const [weekday, setWeekday] = useState("5");
   const [intervalHours, setIntervalHours] = useState("5");
+  const [periodHours, setPeriodHours] = useState("24");
   const [timezone, setTimezone] = useState("UTC");
   const [isDefault, setIsDefault] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1003,6 +1008,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
   const [editTimeOfDay, setEditTimeOfDay] = useState("09:00");
   const [editWeekday, setEditWeekday] = useState("5");
   const [editIntervalHours, setEditIntervalHours] = useState("5");
+  const [editPeriodHours, setEditPeriodHours] = useState("");
   const [editTimezone, setEditTimezone] = useState("UTC");
   const [editIsDefault, setEditIsDefault] = useState(false);
   const [message, setMessage] = useState<string>();
@@ -1015,9 +1021,11 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
     timeOfDay: string;
     weekday: string;
     intervalHours: string;
+    periodHours: string;
     timezone: string;
     isDefault: boolean;
   }) {
+    const lookback = fields.periodHours.trim();
     return {
       name: fields.name,
       recurrence: fields.recurrence,
@@ -1027,6 +1035,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
       weekday: fields.recurrence === "weekly" ? Number(fields.weekday) : null,
       intervalHours:
         fields.recurrence === "interval_hours" ? Number(fields.intervalHours) : null,
+      periodHours: lookback === "" ? null : Number(lookback),
     };
   }
 
@@ -1037,6 +1046,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
     setEditTimeOfDay(schedule.timeOfDay || "09:00");
     setEditWeekday(String(schedule.weekday ?? 5));
     setEditIntervalHours(String(schedule.intervalHours ?? 5));
+    setEditPeriodHours(schedule.periodHours == null ? "" : String(schedule.periodHours));
     setEditTimezone(schedule.timezone || "UTC");
     setEditIsDefault(schedule.isDefault);
     setMessage(undefined);
@@ -1062,6 +1072,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
           timeOfDay,
           weekday,
           intervalHours,
+          periodHours,
           timezone,
           isDefault,
         }),
@@ -1079,6 +1090,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
     setTimeOfDay("09:00");
     setWeekday("5");
     setIntervalHours("5");
+    setPeriodHours("24");
     setTimezone("UTC");
     setIsDefault(false);
     setMessage("Schedule added.");
@@ -1100,6 +1112,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
           timeOfDay: editTimeOfDay,
           weekday: editWeekday,
           intervalHours: editIntervalHours,
+          periodHours: editPeriodHours,
           timezone: editTimezone,
           isDefault: editIsDefault,
         }),
@@ -1168,6 +1181,8 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
     setDay: (v: string) => void,
     hours: string,
     setHours: (v: string) => void,
+    lookback: string,
+    setLookback: (v: string) => void,
     zone: string,
     setZone: (v: string) => void,
     def: boolean,
@@ -1209,6 +1224,19 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
           </label>
         ) : null}
         <label style={fieldStyle}>
+          Lookback (hours)
+          <input
+            type="number"
+            min={1}
+            max={720}
+            value={lookback}
+            onChange={(event) => setLookback(event.target.value)}
+            style={{ ...inputStyle, maxWidth: "7rem" }}
+            placeholder="default"
+          />
+          <span style={{ color: "#666", fontSize: "0.8rem" }}>Empty = global default</span>
+        </label>
+        <label style={fieldStyle}>
           Start time
           <input
             type="time"
@@ -1239,7 +1267,8 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Schedules</h2>
       <p style={{ margin: "0.5rem 0 0", color: "#555", fontSize: "0.95rem" }}>
-        Set when topics run: every day, a weekday, or every N hours from a start time. Mark one schedule as Default for topics without a specific assignment. Manual Generate still runs all enabled topics.
+        Set when topics run and how far back each run looks (lookback). Topics inherit the lookback from
+        their schedule (or the Default schedule). Empty lookback uses the global default on the Prompt tab.
       </p>
 
       <form onSubmit={handleAdd} style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end", marginTop: "1rem" }}>
@@ -1256,6 +1285,8 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
           setWeekday,
           intervalHours,
           setIntervalHours,
+          periodHours,
+          setPeriodHours,
           timezone,
           setTimezone,
           isDefault,
@@ -1271,6 +1302,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
           <tr>
             <th style={cellStyle}>Name</th>
             <th style={cellStyle}>When</th>
+            <th style={cellStyle}>Lookback</th>
             <th style={cellStyle}>Default</th>
             <th style={cellStyle}>Enabled</th>
             <th style={cellStyle}>Actions</th>
@@ -1279,7 +1311,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
         <tbody>
           {initialSchedules.length === 0 ? (
             <tr>
-              <td colSpan={5} style={cellStyle}>No schedules yet.</td>
+              <td colSpan={6} style={cellStyle}>No schedules yet.</td>
             </tr>
           ) : (
             initialSchedules.map((schedule) => {
@@ -1309,6 +1341,13 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
                             weekday: schedule.weekday,
                             intervalHours: schedule.intervalHours,
                           })}
+                    </td>
+                    <td style={cellStyle}>
+                      {isEditing
+                        ? null
+                        : schedule.periodHours == null
+                          ? "Default"
+                          : `${schedule.periodHours}h`}
                     </td>
                     <td style={cellStyle}>{schedule.isDefault ? "Yes" : "—"}</td>
                     <td style={cellStyle}>{schedule.enabled ? "Yes" : "No"}</td>
@@ -1344,7 +1383,7 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
                   </tr>
                   {isEditing ? (
                     <tr>
-                      <td colSpan={5} style={cellStyle}>
+                      <td colSpan={6} style={cellStyle}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end" }}>
                           {recurrenceFields(
                             editRecurrence,
@@ -1355,6 +1394,8 @@ function SchedulesSection({ initialSchedules }: { initialSchedules: ScheduleRow[
                             setEditWeekday,
                             editIntervalHours,
                             setEditIntervalHours,
+                            editPeriodHours,
+                            setEditPeriodHours,
                             editTimezone,
                             setEditTimezone,
                             editIsDefault,
@@ -1661,7 +1702,9 @@ function KeysSection({
 const ADMIN_TABS = [
   { id: "jobs", label: "Jobs" },
   { id: "people", label: "People" },
-  { id: "content", label: "Prompt & topics" },
+  { id: "prompt", label: "Prompt" },
+  { id: "topics", label: "Topics" },
+  { id: "schedules", label: "Schedules" },
   { id: "about", label: "About" },
   { id: "keys", label: "API keys" },
 ] as const;
@@ -1672,13 +1715,22 @@ function isAdminTabId(value: string): value is AdminTabId {
   return ADMIN_TABS.some((item) => item.id === value);
 }
 
+/** Legacy combined tab hash from older Admin UI. */
+function resolveAdminTabHash(raw: string): AdminTabId | null {
+  if (raw === "content") {
+    return "prompt";
+  }
+  return isAdminTabId(raw) ? raw : null;
+}
+
 export function AdminClient({ data }: { data: AdminInitialData }) {
   const [tab, setTab] = useState<AdminTabId>("jobs");
 
   useEffect(() => {
     const fromHash = window.location.hash.replace(/^#/, "");
-    if (isAdminTabId(fromHash)) {
-      setTab(fromHash);
+    const resolved = resolveAdminTabHash(fromHash);
+    if (resolved) {
+      setTab(resolved);
     }
   }, []);
 
@@ -1712,7 +1764,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
 
       <section className="hero" style={{ marginBottom: "1.25rem" }}>
         <h1 style={{ maxWidth: "none", fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>Admin</h1>
-        <p>Jobs, people, prompt, topics, and API keys.</p>
+        <p>Jobs, people, prompt, topics, schedules, and API keys.</p>
       </section>
 
       <nav
@@ -1740,13 +1792,11 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
 
       {tab === "jobs" ? <JobsSection initialJobs={data.jobs} /> : null}
       {tab === "people" ? <PeopleSection initialUsers={data.users} /> : null}
-      {tab === "content" ? (
-        <>
-          <PromptSection initialPrompt={data.prompt} />
-          <TopicsSection initialTopics={data.topics} schedules={data.schedules} />
-          <SchedulesSection initialSchedules={data.schedules} />
-        </>
+      {tab === "prompt" ? <PromptSection initialPrompt={data.prompt} /> : null}
+      {tab === "topics" ? (
+        <TopicsSection initialTopics={data.topics} schedules={data.schedules} />
       ) : null}
+      {tab === "schedules" ? <SchedulesSection initialSchedules={data.schedules} /> : null}
       {tab === "about" ? <AboutSection initialAbout={data.about} /> : null}
       {tab === "keys" ? (
         <KeysSection

@@ -505,13 +505,23 @@ export async function clearTopicIllustrations(topicId: string): Promise<void> {
   await rm(topicDir, { recursive: true, force: true });
 }
 
+/** Strip portal-only board layout wrappers (Telegra.ph node converter ignores divs). */
+export function unwrapBoardStoryLayout(html: string): string {
+  return html.replace(
+    /<div class="board-story">\s*<div class="board-story-text">([\s\S]*?)<\/div>\s*<\/div>/gi,
+    "$1",
+  );
+}
+
 /** Strip figure/img blocks from HTML before publishing to Telegra.ph. */
 export function stripIllustrationsForTelegraph(html: string): string {
-  return html
-    .replace(FIGURE_BLOCK_PATTERN, "")
-    .replace(STANDALONE_IMG_PATTERN, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return unwrapBoardStoryLayout(
+    html
+      .replace(FIGURE_BLOCK_PATTERN, "")
+      .replace(STANDALONE_IMG_PATTERN, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+  );
 }
 
 function collectExternalImageUrls(html: string): string[] {

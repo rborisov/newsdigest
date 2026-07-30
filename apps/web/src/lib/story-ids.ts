@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 
-import { normalizeTitleKey } from "./dedup";
+import { normalizeCanonicalUrl, normalizeTitleKey } from "./dedup";
 import { findStoryParagraphMatch } from "./topic-illustrations";
 
 export type StoryWithId = {
@@ -55,11 +55,67 @@ export async function resolveStoryIds(
   return resolved;
 }
 
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeHtmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function paragraphHasAnchorForUrl(paragraph: string, url: string): boolean {
+  const want = normalizeCanonicalUrl(url);
+  for (const match of paragraph.matchAll(
+    /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+  )) {
+    const href = normalizeCanonicalUrl((match[1] ?? match[2] ?? match[3] ?? "").trim());
+    if (href === want) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function defaultLinkLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    return "Source";
+  }
+}
+
+/**
+ * When the agent omitted a source link, add one from the story canonical URL
+ * so portal + Telegra.ph still show a clickable source.
+ */
+export function ensureStorySourceLink(
+  paragraphHtml: string,
+  canonicalUrl: string | null | undefined,
+): string {
+  const url = canonicalUrl?.trim();
+  if (!url || !/<\/p>\s*$/i.test(paragraphHtml)) {
+    return paragraphHtml;
+  }
+  if (paragraphHasAnchorForUrl(paragraphHtml, url) || /<a\b/i.test(paragraphHtml)) {
+    return paragraphHtml;
+  }
+
+  const label = defaultLinkLabel(url);
+  const anchor = `<a href="${escapeHtmlAttr(url)}">${escapeHtmlText(label)}</a>`;
+  return paragraphHtml.replace(/<\/p>\s*$/i, ` ${anchor}</p>`);
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Append ` · {storyId}` before `</p>` if not already present. */
 export function appendStoryIdSuffix(paragraphHtml: string, storyId: string): string {
   const id = storyId.trim();
   if (!id || !/<\/p>\s*$/i.test(paragraphHtml)) {
@@ -121,7 +177,7 @@ export function stampStoryIdsInHtml(html: string, stories: StoryWithId[]): strin
     return html;
   }
 
-  type Planned = { start: number; end: number; paragraph: string; id: string };
+  type Planned = { start: number; end: number; paragraph: string; id: string; canonicalUrl?: string | null };
   const planned: Planned[] = [];
   const usedStarts = new Set<number>();
 
@@ -149,6 +205,7 @@ export function stampStoryIdsInHtml(html: string, stories: StoryWithId[]): strin
       end: block.end,
       paragraph: block.paragraph,
       id: story.id,
+      canonicalUrl: story.canonicalUrl,
     });
   }
 
@@ -156,7 +213,8 @@ export function stampStoryIdsInHtml(html: string, stories: StoryWithId[]): strin
 
   let result = html;
   for (const item of planned) {
-    const stamped = appendStoryIdSuffix(item.paragraph, item.id);
+    const withSource = ensureStorySourceLink(item.paragraph, item.canonicalUrl);
+    const stamped = appendStoryIdSuffix(withSource, item.id);
     result = result.slice(0, item.start) + stamped + result.slice(item.end);
   }
 

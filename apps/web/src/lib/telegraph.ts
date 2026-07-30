@@ -880,6 +880,9 @@ export async function publishDigest(
     }
   }
 
+  const storiesWithIds = await resolveStoryIds(db, input.stories);
+  sourceHtml = stampStoryIdsInHtml(sourceHtml, storiesWithIds);
+
   let telegraphHtml = stripIllustrationsForTelegraph(sourceHtml);
   let boardHtml = telegraphHtml;
 
@@ -887,7 +890,7 @@ export async function publishDigest(
     await clearTopicIllustrations(topicId);
     const prepared = await prepareBoardHtmlWithIllustrations(topicId, sourceHtml, fetchFn);
     boardHtml = prepared.html;
-    telegraphHtml = stripIllustrationsForTelegraph(boardHtml);
+    telegraphHtml = stripIllustrationsForTelegraph(sourceHtml);
     prepared.enrichedFromStories = enrichedFromStories;
 
     appendJobLogLine(
@@ -903,10 +906,6 @@ export async function publishDigest(
       input.stepId ?? undefined,
     );
   }
-
-  const storiesWithIds = await resolveStoryIds(db, input.stories);
-  boardHtml = stampStoryIdsInHtml(boardHtml, storiesWithIds);
-  telegraphHtml = stripIllustrationsForTelegraph(boardHtml);
 
   const digest = await createPage({
     accessToken,

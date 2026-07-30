@@ -40,6 +40,14 @@ describe("topic-illustrations", () => {
     assert.match(stripped, /<p>Next<\/p>/);
   });
 
+  it("unwraps portal board layout so Telegra.ph keeps story links", () => {
+    const html =
+      '<div class="board-story"><div class="board-story-text"><p><strong>Story</strong> — text. <a href="https://news.test/a">Src</a> · clid123</p></div></div>';
+    const stripped = stripIllustrationsForTelegraph(html);
+    assert.doesNotMatch(stripped, /board-story/);
+    assert.match(stripped, /<a href="https:\/\/news\.test\/a">Src<\/a>/);
+  });
+
   it("allows only portal illustration URLs on the board", () => {
     const local = illustrationPublicUrl(TOPIC_ID, "abc.jpg");
     assert.equal(isAllowedBoardIllustrationSrc(local, TOPIC_ID), true);

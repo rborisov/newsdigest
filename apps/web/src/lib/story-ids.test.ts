@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   appendStoryIdSuffix,
   createCuid,
+  ensureStorySourceLink,
   stampStoryIdsInHtml,
 } from "./story-ids";
 
@@ -50,5 +51,32 @@ describe("story-ids", () => {
       stamped,
       "<p><strong>Solo headline</strong> — summary only. · cidsolo00000000000000001</p>",
     );
+  });
+
+  it("adds a source link when the paragraph has none", () => {
+    const html = "<p><strong>Headline</strong> — summary only.</p>";
+    const stamped = stampStoryIdsInHtml(html, [
+      {
+        id: "clsrc0000000000000000001",
+        title: "Headline",
+        canonicalUrl: "https://news.test/article",
+      },
+    ]);
+    assert.match(stamped, /<a href="https:\/\/news\.test\/article">news\.test<\/a>/);
+    assert.match(stamped, / · clsrc0000000000000000001<\/p>/);
+  });
+
+  it("keeps an existing publisher link when stamping", () => {
+    const html =
+      "<p><strong>Headline</strong> — summary. <a href=\"https://publisher.test\">Publisher</a></p>";
+    const stamped = stampStoryIdsInHtml(html, [
+      {
+        id: "clkeep000000000000000001",
+        title: "Headline",
+        canonicalUrl: "https://news.test/article",
+      },
+    ]);
+    assert.match(stamped, /<a href="https:\/\/publisher\.test">Publisher<\/a>/);
+    assert.doesNotMatch(stamped, /news\.test\/article/);
   });
 });

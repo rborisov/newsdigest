@@ -12,6 +12,8 @@ export type TriggerGenerationInput = {
   triggerType: TriggerType;
   triggeredBy: string;
   scheduleId?: string | null;
+  /** When set, run a job for this topic only (manual single-topic test). */
+  topicId?: string | null;
 };
 
 export type TriggerGenerationResult =
@@ -41,9 +43,42 @@ export async function triggerGeneration(
   }
 
   const scheduleId = input.scheduleId?.trim() || null;
+  const topicId = input.topicId?.trim() || null;
   let topics: { id: string; name: string }[];
 
-  if (scheduleId) {
+  if (topicId) {
+    if (scheduleId) {
+      return {
+        ok: false,
+        error: "Pass either topicId or scheduleId, not both.",
+        status: 400,
+      };
+    }
+
+    const topic = await defaultPrisma.topic.findUnique({
+      where: { id: topicId },
+      select: { id: true, name: true, enabled: true, keywords: true },
+    });
+    if (!topic) {
+      return { ok: false, error: "Topic not found.", status: 404 };
+    }
+    if (!topic.enabled) {
+      return {
+        ok: false,
+        error: `Topic "${topic.name}" is disabled. Enable it before generating.`,
+        status: 400,
+      };
+    }
+    if (!topic.keywords.trim()) {
+      return {
+        ok: false,
+        error: `Topic "${topic.name}" needs keywords / notes before generating.`,
+        status: 400,
+      };
+    }
+
+    topics = [{ id: topic.id, name: topic.name }];
+  } else if (scheduleId) {
     const schedule = await defaultPrisma.schedule.findUnique({
       where: { id: scheduleId },
       select: { id: true, isDefault: true, enabled: true, name: true },

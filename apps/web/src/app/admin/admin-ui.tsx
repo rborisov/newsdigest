@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { SiteHeader } from "@/app/site-header";
 import { SignOutButton } from "@/app/sign-out-button";
@@ -696,78 +696,155 @@ function TopicsSection({
   schedules: ScheduleRow[];
 }) {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [keywords, setKeywords] = useState("");
-  const [sortOrder, setSortOrder] = useState("0");
-  const [scheduleId, setScheduleId] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editKeywords, setEditKeywords] = useState("");
-  const [editSortOrder, setEditSortOrder] = useState("0");
-  const [editScheduleId, setEditScheduleId] = useState("");
+  const [topics, setTopics] = useState(initialTopics);
+  const [selection, setSelection] = useState<"new" | string>(
+    initialTopics[0]?.id ?? "new",
+  );
+  const [name, setName] = useState(initialTopics[0]?.name ?? "");
+  const [keywords, setKeywords] = useState(initialTopics[0]?.keywords ?? "");
+  const [sortOrder, setSortOrder] = useState(String(initialTopics[0]?.sortOrder ?? 0));
+  const [scheduleId, setScheduleId] = useState(initialTopics[0]?.scheduleId ?? "");
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const [fieldError, setFieldError] = useState<string>();
   const [pending, setPending] = useState(false);
+  const [generatePending, setGeneratePending] = useState(false);
+  const [generateStatus, setGenerateStatus] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<{ id: string; status: string } | null>(null);
 
-  function startEdit(topic: TopicRow) {
-    setEditingId(topic.id);
-    setEditName(topic.name);
-    setEditKeywords(topic.keywords);
-    setEditSortOrder(String(topic.sortOrder));
-    setEditScheduleId(topic.scheduleId ?? "");
-    setMessage(undefined);
-    setError(undefined);
-  }
+  useEffect(() => {
+    setTopics(initialTopics);
+  }, [initialTopics]);
 
-  function cancelEdit() {
-    setEditingId(null);
-  }
+  const selectedTopic = useMemo(
+    () => (selection === "new" ? null : topics.find((topic) => topic.id === selection) ?? null),
+    [selection, topics],
+  );
 
-  async function handleAdd(event: React.FormEvent) {
-    event.preventDefault();
-    setPending(true);
-    setMessage(undefined);
-    setError(undefined);
-
-    const result = await adminFetch("/api/admin/topics", {
-      method: "POST",
-      body: JSON.stringify({
-        name,
-        keywords,
-        sortOrder: Number(sortOrder),
-        scheduleId: scheduleId || null,
-      }),
-    });
-
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
+  useEffect(() => {
+    if (selection === "new") {
       return;
     }
+    const topic = topics.find((row) => row.id === selection);
+    if (!topic) {
+      setSelection(topics[0]?.id ?? "new");
+      if (topics[0]) {
+        setName(topics[0].name);
+        setKeywords(topics[0].keywords);
+        setSortOrder(String(topics[0].sortOrder));
+        setScheduleId(topics[0].scheduleId ?? "");
+      } else {
+        setName("");
+        setKeywords("");
+        setSortOrder("0");
+        setScheduleId("");
+      }
+      return;
+    }
+    setName(topic.name);
+    setKeywords(topic.keywords);
+    setSortOrder(String(topic.sortOrder));
+    setScheduleId(topic.scheduleId ?? "");
+  }, [selection, topics]);
 
+  const refreshActiveJob = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/jobs");
+      if (!response.ok) {
+        return;
+      }
+      const data = (await response.json()) as { jobs?: { id: string; status: string }[] };
+      const active =
+        data.jobs?.find((job) => job.status === "pending" || job.status === "running") ?? null;
+      setActiveJob(active);
+      if (!active && generateStatus?.includes("in progress")) {
+        setGenerateStatus(null);
+      }
+    } catch {
+      // ignore polling errors
+    }
+  }, [generateStatus]);
+
+  useEffect(() => {
+    void refreshActiveJob();
+  }, [refreshActiveJob]);
+
+  useEffect(() => {
+    if (!activeJob) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshActiveJob();
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [activeJob, refreshActiveJob]);
+
+  function validateRequired(): string | null {
+    if (!name.trim()) {
+      return "Name is required.";
+    }
+    if (!keywords.trim()) {
+      return "Keywords / notes are required so the agent can scan the web.";
+    }
+    return null;
+  }
+
+  function startAdd() {
+    setSelection("new");
     setName("");
     setKeywords("");
     setSortOrder("0");
     setScheduleId("");
-    setMessage("Topic added.");
-    router.refresh();
+    setMessage(undefined);
+    setError(undefined);
+    setFieldError(undefined);
+    setGenerateStatus(null);
   }
 
-  async function saveEdit(topicId: string) {
+  function selectTopic(topic: TopicRow) {
+    setSelection(topic.id);
+    setName(topic.name);
+    setKeywords(topic.keywords);
+    setSortOrder(String(topic.sortOrder));
+    setScheduleId(topic.scheduleId ?? "");
+    setMessage(undefined);
+    setError(undefined);
+    setFieldError(undefined);
+    setGenerateStatus(null);
+  }
+
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault();
+    const validationError = validateRequired();
+    if (validationError) {
+      setFieldError(validationError);
+      setError(undefined);
+      setMessage(undefined);
+      return;
+    }
+
     setPending(true);
     setMessage(undefined);
     setError(undefined);
+    setFieldError(undefined);
 
-    const result = await adminFetch("/api/admin/topics", {
-      method: "PATCH",
-      body: JSON.stringify({
-        id: topicId,
-        name: editName,
-        keywords: editKeywords,
-        sortOrder: Number(editSortOrder),
-        scheduleId: editScheduleId || null,
-      }),
-    });
+    const payload = {
+      name: name.trim(),
+      keywords: keywords.trim(),
+      sortOrder: Number(sortOrder),
+      scheduleId: scheduleId || null,
+    };
+
+    const result =
+      selection === "new"
+        ? await adminFetch("/api/admin/topics", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          })
+        : await adminFetch("/api/admin/topics", {
+            method: "PATCH",
+            body: JSON.stringify({ id: selection, ...payload }),
+          });
 
     setPending(false);
     if (!result.ok) {
@@ -775,8 +852,19 @@ function TopicsSection({
       return;
     }
 
-    setEditingId(null);
-    setMessage("Topic updated.");
+    const topic = (result.data as { topic?: TopicRow }).topic;
+    if (topic) {
+      setTopics((prev) => {
+        const rest = prev.filter((row) => row.id !== topic.id);
+        return [...rest, topic].sort(
+          (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+        );
+      });
+      setSelection(topic.id);
+      setMessage(selection === "new" ? "Topic added." : "Topic updated.");
+    } else {
+      setMessage(selection === "new" ? "Topic added." : "Topic updated.");
+    }
     router.refresh();
   }
 
@@ -794,6 +882,9 @@ function TopicsSection({
       return;
     }
 
+    setTopics((prev) =>
+      prev.map((row) => (row.id === topic.id ? { ...row, enabled: !topic.enabled } : row)),
+    );
     router.refresh();
   }
 
@@ -815,179 +906,263 @@ function TopicsSection({
       return;
     }
 
-    if (editingId === topic.id) {
-      setEditingId(null);
+    const remaining = topics.filter((row) => row.id !== topic.id);
+    setTopics(remaining);
+    if (remaining[0]) {
+      selectTopic(remaining[0]);
+    } else {
+      startAdd();
     }
     setMessage("Topic deleted.");
     router.refresh();
   }
 
-  const scheduleSelect = (value: string, onChange: (v: string) => void) => (
-    <select value={value} onChange={(event) => onChange(event.target.value)} style={inputStyle}>
-      <option value="">Default schedule</option>
-      {schedules.map((schedule) => (
-        <option key={schedule.id} value={schedule.id}>
-          {schedule.name}
-          {schedule.isDefault ? " (default)" : ""}
-        </option>
-      ))}
-    </select>
-  );
+  async function generateTopic(topic: TopicRow) {
+    if (activeJob || generatePending) {
+      return;
+    }
+    if (!topic.enabled) {
+      setGenerateStatus("Enable the topic before generating.");
+      return;
+    }
+    if (!topic.keywords.trim()) {
+      setGenerateStatus("Add keywords / notes before generating.");
+      return;
+    }
+
+    setGeneratePending(true);
+    setGenerateStatus(null);
+    setError(undefined);
+
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topicId: topic.id }),
+      });
+      const data = (await response.json()) as {
+        message?: string;
+        error?: string;
+        jobId?: string;
+      };
+
+      if (!response.ok) {
+        setGenerateStatus(data.error ?? "Generation failed.");
+        await refreshActiveJob();
+        return;
+      }
+
+      setGenerateStatus(data.message ?? "Topic generation triggered.");
+      if (data.jobId) {
+        setActiveJob({ id: data.jobId, status: "running" });
+      } else {
+        await refreshActiveJob();
+      }
+    } catch {
+      setGenerateStatus("Generation failed.");
+    } finally {
+      setGeneratePending(false);
+    }
+  }
+
+  const listItemStyle = (active: boolean): React.CSSProperties => ({
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    padding: "0.55rem 0.65rem",
+    border: "none",
+    borderLeft: active ? "3px solid #222" : "3px solid transparent",
+    background: active ? "#f3f3f3" : "transparent",
+    cursor: "pointer",
+    font: "inherit",
+  });
+
+  const generateBlockedReason = selectedTopic
+    ? !selectedTopic.enabled
+      ? "Enable the topic before generating."
+      : !keywords.trim()
+        ? "Add keywords / notes before generating."
+        : !selectedTopic.keywords.trim()
+          ? "Save changes before generating."
+          : activeJob
+            ? `Job ${activeJob.id} in progress…`
+            : null
+    : null;
 
   return (
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Topics</h2>
       <p style={{ margin: "0.5rem 0 0", color: "#555", fontSize: "0.95rem" }}>
-        Assign a schedule per topic, or leave Default for topics that should follow the default schedule.
+        Pick a topic to edit, or add a new one. Name and keywords are required. Use Generate to run
+        only the selected topic.
       </p>
 
-      <form onSubmit={handleAdd} style={{ display: "grid", gap: "0.75rem", marginTop: "1rem" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end" }}>
-          <label style={fieldStyle}>
-            Name
-            <input required value={name} onChange={(event) => setName(event.target.value)} style={inputStyle} />
-          </label>
-          <label style={fieldStyle}>
-            Sort order
-            <input
-              type="number"
-              value={sortOrder}
-              onChange={(event) => setSortOrder(event.target.value)}
-              style={{ ...inputStyle, maxWidth: "6rem" }}
-            />
-          </label>
-          <label style={fieldStyle}>
-            Schedule
-            {scheduleSelect(scheduleId, setScheduleId)}
-          </label>
-          <button type="submit" disabled={pending} style={buttonStyle}>
-            Add topic
+      <div
+        className="topics-master-detail"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(12rem, 16rem) minmax(0, 1fr)",
+          gap: "1.25rem",
+          marginTop: "1rem",
+          alignItems: "start",
+        }}
+      >
+        <aside
+          style={{
+            border: "1px solid var(--line)",
+            maxHeight: "32rem",
+            overflow: "auto",
+          }}
+        >
+          <button type="button" style={listItemStyle(selection === "new")} onClick={startAdd}>
+            + Add topic
           </button>
-        </div>
-        <label style={{ ...fieldStyle, maxWidth: "48rem" }}>
-          Keywords / topic notes
-          <textarea
-            value={keywords}
-            onChange={(event) => setKeywords(event.target.value)}
-            rows={5}
-            placeholder={"search terms…\nPrefer: …\nSkip: …"}
-            style={{ ...inputStyle, width: "100%", minHeight: "6rem", resize: "vertical", fontFamily: "inherit" }}
-          />
-          <span style={{ color: "#666", fontSize: "0.85rem" }}>
-            Multi-line OK. Search terms and per-topic prefer/skip rules go here (not in the global prompt).
-          </span>
-        </label>
-      </form>
-
-      <table style={tableStyle}>
-        <thead>
-          <tr>
-            <th style={cellStyle}>Name</th>
-            <th style={cellStyle}>Keywords / notes</th>
-            <th style={cellStyle}>Order</th>
-            <th style={cellStyle}>Schedule</th>
-            <th style={cellStyle}>Enabled</th>
-            <th style={cellStyle}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {initialTopics.length === 0 ? (
-            <tr>
-              <td colSpan={6} style={cellStyle}>No topics yet.</td>
-            </tr>
+          {topics.length === 0 ? (
+            <p style={{ margin: 0, padding: "0.65rem", color: "#666", fontSize: "0.9rem" }}>
+              No topics yet.
+            </p>
           ) : (
-            initialTopics.map((topic) => {
-              const isEditing = editingId === topic.id;
-              return (
-                <tr key={topic.id}>
-                  <td style={cellStyle}>
-                    {isEditing ? (
-                      <input
-                        required
-                        value={editName}
-                        onChange={(event) => setEditName(event.target.value)}
-                        style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
-                      />
-                    ) : (
-                      topic.name
-                    )}
-                  </td>
-                  <td style={cellStyle}>
-                    {isEditing ? (
-                      <textarea
-                        value={editKeywords}
-                        onChange={(event) => setEditKeywords(event.target.value)}
-                        rows={5}
-                        style={{
-                          ...inputStyle,
-                          width: "100%",
-                          minHeight: "6rem",
-                          resize: "vertical",
-                          boxSizing: "border-box",
-                          fontFamily: "inherit",
-                        }}
-                      />
-                    ) : (
-                      <span style={{ whiteSpace: "pre-wrap", display: "block", maxWidth: "28rem" }}>
-                        {topic.keywords || "—"}
-                      </span>
-                    )}
-                  </td>
-                  <td style={cellStyle}>
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={editSortOrder}
-                        onChange={(event) => setEditSortOrder(event.target.value)}
-                        style={{ ...inputStyle, maxWidth: "5rem" }}
-                      />
-                    ) : (
-                      topic.sortOrder
-                    )}
-                  </td>
-                  <td style={cellStyle}>
-                    {isEditing
-                      ? scheduleSelect(editScheduleId, setEditScheduleId)
-                      : scheduleLabel(schedules, topic.scheduleId)}
-                  </td>
-                  <td style={cellStyle}>{topic.enabled ? "Yes" : "No"}</td>
-                  <td style={cellStyle}>
-                    {isEditing ? (
-                      <>
-                        <button
-                          type="button"
-                          disabled={pending || !editName.trim()}
-                          style={buttonStyle}
-                          onClick={() => void saveEdit(topic.id)}
-                        >
-                          Save
-                        </button>{" "}
-                        <button type="button" disabled={pending} style={buttonStyle} onClick={cancelEdit}>
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button type="button" style={buttonStyle} onClick={() => startEdit(topic)}>
-                          Edit
-                        </button>{" "}
-                        <button type="button" style={buttonStyle} onClick={() => toggleEnabled(topic)}>
-                          {topic.enabled ? "Disable" : "Enable"}
-                        </button>{" "}
-                        <button type="button" style={buttonStyle} onClick={() => removeTopic(topic)}>
-                          Delete
-                        </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              );
-            })
+            topics.map((topic) => (
+              <button
+                key={topic.id}
+                type="button"
+                style={listItemStyle(selection === topic.id)}
+                onClick={() => selectTopic(topic)}
+              >
+                <span style={{ display: "block", fontWeight: selection === topic.id ? 600 : 400 }}>
+                  {topic.name}
+                </span>
+                <span style={{ display: "block", color: "#666", fontSize: "0.8rem", marginTop: "0.15rem" }}>
+                  {scheduleLabel(schedules, topic.scheduleId)}
+                  {topic.enabled ? "" : " · disabled"}
+                </span>
+              </button>
+            ))
           )}
-        </tbody>
-      </table>
+        </aside>
 
-      <StatusMessage message={message} error={error} />
+        <div>
+          <h3 style={{ ...headingStyle, marginTop: 0 }}>
+            {selection === "new" ? "New topic" : selectedTopic?.name ?? "Topic"}
+          </h3>
+
+          <form onSubmit={(event) => void handleSave(event)} style={{ display: "grid", gap: "0.75rem" }}>
+            <label style={fieldStyle}>
+              Name
+              <input
+                required
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setFieldError(undefined);
+                }}
+                style={inputStyle}
+              />
+            </label>
+            <label style={fieldStyle}>
+              Keywords / topic notes
+              <textarea
+                required
+                value={keywords}
+                onChange={(event) => {
+                  setKeywords(event.target.value);
+                  setFieldError(undefined);
+                }}
+                rows={8}
+                placeholder={"search terms…\nPrefer: …\nSkip: …"}
+                style={{
+                  ...inputStyle,
+                  width: "100%",
+                  minHeight: "8rem",
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                  boxSizing: "border-box",
+                }}
+              />
+              <span style={{ color: "#666", fontSize: "0.85rem" }}>
+                Required. Multi-line OK. Search terms and per-topic prefer/skip rules go here.
+              </span>
+            </label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end" }}>
+              <label style={fieldStyle}>
+                Sort order
+                <input
+                  type="number"
+                  value={sortOrder}
+                  onChange={(event) => setSortOrder(event.target.value)}
+                  style={{ ...inputStyle, maxWidth: "6rem" }}
+                />
+              </label>
+              <label style={{ ...fieldStyle, minWidth: "12rem", flex: 1 }}>
+                Schedule
+                <select
+                  value={scheduleId}
+                  onChange={(event) => setScheduleId(event.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Default schedule</option>
+                  {schedules.map((schedule) => (
+                    <option key={schedule.id} value={schedule.id}>
+                      {schedule.name}
+                      {schedule.isDefault ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+              <button type="submit" disabled={pending} style={buttonStyle}>
+                {selection === "new" ? "Create topic" : "Save changes"}
+              </button>
+              {selectedTopic ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    style={buttonStyle}
+                    onClick={() => void toggleEnabled(selectedTopic)}
+                  >
+                    {selectedTopic.enabled ? "Disable" : "Enable"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    style={buttonStyle}
+                    onClick={() => void removeTopic(selectedTopic)}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(generateBlockedReason) || generatePending}
+                    style={buttonStyle}
+                    title={generateBlockedReason ?? undefined}
+                    onClick={() => void generateTopic(selectedTopic)}
+                  >
+                    {generatePending || activeJob ? "Generating…" : "Generate this topic"}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </form>
+
+          {fieldError ? <p style={errorStyle}>{fieldError}</p> : null}
+          <StatusMessage message={message} error={error} />
+          {generateStatus ? <p style={messageStyle}>{generateStatus}</p> : null}
+          {generateBlockedReason && selectedTopic && !generateStatus ? (
+            <p style={messageStyle}>{generateBlockedReason}</p>
+          ) : null}
+        </div>
+      </div>
+
+      <style>{`
+        @media (max-width: 720px) {
+          .topics-master-detail {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </section>
   );
 }
@@ -1749,7 +1924,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
   });
 
   return (
-    <main className="shell" style={{ maxWidth: "56rem" }}>
+    <main className="shell" style={{ maxWidth: "72rem" }}>
       <SiteHeader
         actions={
           <>

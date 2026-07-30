@@ -35,6 +35,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Name is required." }, { status: 400 });
   }
 
+  const keywords = body.keywords?.trim() ?? "";
+  if (!keywords) {
+    return NextResponse.json(
+      { error: "Keywords / notes are required so the agent can scan the web." },
+      { status: 400 },
+    );
+  }
+
   let scheduleId: string | null = null;
   if (body.scheduleId !== undefined && body.scheduleId !== null && body.scheduleId !== "") {
     const schedule = await prisma.schedule.findUnique({ where: { id: body.scheduleId } });
@@ -47,7 +55,7 @@ export async function POST(request: Request) {
   const topic = await prisma.topic.create({
     data: {
       name,
-      keywords: body.keywords?.trim() ?? "",
+      keywords,
       enabled: body.enabled ?? true,
       sortOrder: body.sortOrder ?? 0,
       scheduleId,
@@ -97,7 +105,14 @@ export async function PATCH(request: Request) {
     data.name = name;
   }
   if (body.keywords !== undefined) {
-    data.keywords = body.keywords.trim();
+    const keywords = body.keywords.trim();
+    if (!keywords) {
+      return NextResponse.json(
+        { error: "Keywords / notes are required so the agent can scan the web." },
+        { status: 400 },
+      );
+    }
+    data.keywords = keywords;
   }
   if (typeof body.enabled === "boolean") {
     data.enabled = body.enabled;

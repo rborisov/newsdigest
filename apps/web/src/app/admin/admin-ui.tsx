@@ -837,38 +837,49 @@ function TopicsSection({
         Assign a schedule per topic, or leave Default for topics that should follow the default schedule.
       </p>
 
-      <form onSubmit={handleAdd} style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end", marginTop: "1rem" }}>
-        <label style={fieldStyle}>
-          Name
-          <input required value={name} onChange={(event) => setName(event.target.value)} style={inputStyle} />
-        </label>
-        <label style={fieldStyle}>
-          Keywords
-          <input value={keywords} onChange={(event) => setKeywords(event.target.value)} style={inputStyle} />
-        </label>
-        <label style={fieldStyle}>
-          Sort order
-          <input
-            type="number"
-            value={sortOrder}
-            onChange={(event) => setSortOrder(event.target.value)}
-            style={{ ...inputStyle, maxWidth: "6rem" }}
+      <form onSubmit={handleAdd} style={{ display: "grid", gap: "0.75rem", marginTop: "1rem" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end" }}>
+          <label style={fieldStyle}>
+            Name
+            <input required value={name} onChange={(event) => setName(event.target.value)} style={inputStyle} />
+          </label>
+          <label style={fieldStyle}>
+            Sort order
+            <input
+              type="number"
+              value={sortOrder}
+              onChange={(event) => setSortOrder(event.target.value)}
+              style={{ ...inputStyle, maxWidth: "6rem" }}
+            />
+          </label>
+          <label style={fieldStyle}>
+            Schedule
+            {scheduleSelect(scheduleId, setScheduleId)}
+          </label>
+          <button type="submit" disabled={pending} style={buttonStyle}>
+            Add topic
+          </button>
+        </div>
+        <label style={{ ...fieldStyle, maxWidth: "48rem" }}>
+          Keywords / topic notes
+          <textarea
+            value={keywords}
+            onChange={(event) => setKeywords(event.target.value)}
+            rows={5}
+            placeholder={"search terms…\nPrefer: …\nSkip: …"}
+            style={{ ...inputStyle, width: "100%", minHeight: "6rem", resize: "vertical", fontFamily: "inherit" }}
           />
+          <span style={{ color: "#666", fontSize: "0.85rem" }}>
+            Multi-line OK. Search terms and per-topic prefer/skip rules go here (not in the global prompt).
+          </span>
         </label>
-        <label style={fieldStyle}>
-          Schedule
-          {scheduleSelect(scheduleId, setScheduleId)}
-        </label>
-        <button type="submit" disabled={pending} style={buttonStyle}>
-          Add topic
-        </button>
       </form>
 
       <table style={tableStyle}>
         <thead>
           <tr>
             <th style={cellStyle}>Name</th>
-            <th style={cellStyle}>Keywords</th>
+            <th style={cellStyle}>Keywords / notes</th>
             <th style={cellStyle}>Order</th>
             <th style={cellStyle}>Schedule</th>
             <th style={cellStyle}>Enabled</th>
@@ -899,13 +910,23 @@ function TopicsSection({
                   </td>
                   <td style={cellStyle}>
                     {isEditing ? (
-                      <input
+                      <textarea
                         value={editKeywords}
                         onChange={(event) => setEditKeywords(event.target.value)}
-                        style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}
+                        rows={5}
+                        style={{
+                          ...inputStyle,
+                          width: "100%",
+                          minHeight: "6rem",
+                          resize: "vertical",
+                          boxSizing: "border-box",
+                          fontFamily: "inherit",
+                        }}
                       />
                     ) : (
-                      topic.keywords || "—"
+                      <span style={{ whiteSpace: "pre-wrap", display: "block", maxWidth: "28rem" }}>
+                        {topic.keywords || "—"}
+                      </span>
                     )}
                   </td>
                   <td style={cellStyle}>

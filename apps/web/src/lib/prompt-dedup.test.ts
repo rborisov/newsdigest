@@ -156,6 +156,16 @@ describe("prompt", () => {
       );
     });
 
+    it("preserves multi-line topic notes with indentation", () => {
+      assert.equal(
+        formatTopicWithKeywords({
+          name: "Open source mobile",
+          keywords: "srsRAN, Open5GS\nPrefer: GitHub releases\nSkip: generic 5G news",
+        }),
+        "- Open source mobile\n  Keywords: srsRAN, Open5GS\n  Prefer: GitHub releases\n  Skip: generic 5G news",
+      );
+    });
+
     it("omits keywords line when empty", () => {
       assert.equal(formatTopicWithKeywords({ name: "Open RAN", keywords: "  " }), "- Open RAN");
     });

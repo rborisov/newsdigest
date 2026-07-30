@@ -36,7 +36,12 @@ export function formatTopicWithKeywords(topic: Pick<Topic, "name" | "keywords">)
   if (!keywords) {
     return `- ${topic.name}`;
   }
-  return `- ${topic.name}\n  Keywords: ${keywords}`;
+  // Keep multi-line topic notes readable in the agent prompt.
+  const indented = keywords
+    .split(/\r?\n/)
+    .map((line, index) => (index === 0 ? line : `  ${line}`))
+    .join("\n");
+  return `- ${topic.name}\n  Keywords: ${indented}`;
 }
 
 export function formatPromptDate(date: Date, timeZone = "UTC"): string {

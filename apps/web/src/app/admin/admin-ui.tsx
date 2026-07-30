@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SiteHeader } from "@/app/site-header";
 import { SignOutButton } from "@/app/sign-out-button";
@@ -691,19 +691,32 @@ function scheduleLabel(schedules: ScheduleRow[], scheduleId: string | null): str
 function TopicsSection({
   initialTopics,
   schedules,
+  leaveGuardRef,
 }: {
   initialTopics: TopicRow[];
   schedules: ScheduleRow[];
+  leaveGuardRef?: { current: (() => Promise<boolean>) | null };
 }) {
   const router = useRouter();
+  const initialForm =
+    initialTopics[0] != null
+      ? {
+          name: initialTopics[0].name,
+          keywords: initialTopics[0].keywords,
+          sortOrder: String(initialTopics[0].sortOrder),
+          scheduleId: initialTopics[0].scheduleId ?? "",
+        }
+      : { name: "", keywords: "", sortOrder: "0", scheduleId: "" };
+
   const [topics, setTopics] = useState(initialTopics);
   const [selection, setSelection] = useState<"new" | string>(
     initialTopics[0]?.id ?? "new",
   );
-  const [name, setName] = useState(initialTopics[0]?.name ?? "");
-  const [keywords, setKeywords] = useState(initialTopics[0]?.keywords ?? "");
-  const [sortOrder, setSortOrder] = useState(String(initialTopics[0]?.sortOrder ?? 0));
-  const [scheduleId, setScheduleId] = useState(initialTopics[0]?.scheduleId ?? "");
+  const [name, setName] = useState(initialForm.name);
+  const [keywords, setKeywords] = useState(initialForm.keywords);
+  const [sortOrder, setSortOrder] = useState(initialForm.sortOrder);
+  const [scheduleId, setScheduleId] = useState(initialForm.scheduleId);
+  const [baseline, setBaseline] = useState(initialForm);
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [fieldError, setFieldError] = useState<string>();
@@ -711,6 +724,8 @@ function TopicsSection({
   const [generatePending, setGeneratePending] = useState(false);
   const [generateStatus, setGenerateStatus] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<{ id: string; status: string } | null>(null);
+  const [leaveTarget, setLeaveTarget] = useState<"new" | string | null>(null);
+  const leaveDialogResolver = useRef<((ok: boolean) => void) | null>(null);
 
   useEffect(() => {
     setTopics(initialTopics);
@@ -721,31 +736,71 @@ function TopicsSection({
     [selection, topics],
   );
 
+  const isDirty =
+    name !== baseline.name ||
+    keywords !== baseline.keywords ||
+    sortOrder !== baseline.sortOrder ||
+    scheduleId !== baseline.scheduleId;
+
+  const emptyForm = useCallback(
+    () => ({ name: "", keywords: "", sortOrder: "0", scheduleId: "" }),
+    [],
+  );
+
+  const formFromTopic = useCallback((topic: TopicRow) => {
+    return {
+      name: topic.name,
+      keywords: topic.keywords,
+      sortOrder: String(topic.sortOrder),
+      scheduleId: topic.scheduleId ?? "",
+    };
+  }, []);
+
+  const applySelection = useCallback(
+    (next: "new" | string) => {
+      setSelection(next);
+      setMessage(undefined);
+      setError(undefined);
+      setFieldError(undefined);
+      setGenerateStatus(null);
+      if (next === "new") {
+        const form = emptyForm();
+        setName(form.name);
+        setKeywords(form.keywords);
+        setSortOrder(form.sortOrder);
+        setScheduleId(form.scheduleId);
+        setBaseline(form);
+        return;
+      }
+      const topic = topics.find((row) => row.id === next);
+      if (!topic) {
+        const form = emptyForm();
+        setSelection("new");
+        setName(form.name);
+        setKeywords(form.keywords);
+        setSortOrder(form.sortOrder);
+        setScheduleId(form.scheduleId);
+        setBaseline(form);
+        return;
+      }
+      const form = formFromTopic(topic);
+      setName(form.name);
+      setKeywords(form.keywords);
+      setSortOrder(form.sortOrder);
+      setScheduleId(form.scheduleId);
+      setBaseline(form);
+    },
+    [emptyForm, formFromTopic, topics],
+  );
+
   useEffect(() => {
     if (selection === "new") {
       return;
     }
-    const topic = topics.find((row) => row.id === selection);
-    if (!topic) {
-      setSelection(topics[0]?.id ?? "new");
-      if (topics[0]) {
-        setName(topics[0].name);
-        setKeywords(topics[0].keywords);
-        setSortOrder(String(topics[0].sortOrder));
-        setScheduleId(topics[0].scheduleId ?? "");
-      } else {
-        setName("");
-        setKeywords("");
-        setSortOrder("0");
-        setScheduleId("");
-      }
-      return;
+    if (!topics.some((row) => row.id === selection)) {
+      applySelection(topics[0]?.id ?? "new");
     }
-    setName(topic.name);
-    setKeywords(topic.keywords);
-    setSortOrder(String(topic.sortOrder));
-    setScheduleId(topic.scheduleId ?? "");
-  }, [selection, topics]);
+  }, [topics, selection, applySelection]);
 
   const refreshActiveJob = useCallback(async () => {
     try {
@@ -779,6 +834,18 @@ function TopicsSection({
     return () => window.clearInterval(timer);
   }, [activeJob, refreshActiveJob]);
 
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
+
   function validateRequired(): string | null {
     if (!name.trim()) {
       return "Name is required.";
@@ -789,38 +856,13 @@ function TopicsSection({
     return null;
   }
 
-  function startAdd() {
-    setSelection("new");
-    setName("");
-    setKeywords("");
-    setSortOrder("0");
-    setScheduleId("");
-    setMessage(undefined);
-    setError(undefined);
-    setFieldError(undefined);
-    setGenerateStatus(null);
-  }
-
-  function selectTopic(topic: TopicRow) {
-    setSelection(topic.id);
-    setName(topic.name);
-    setKeywords(topic.keywords);
-    setSortOrder(String(topic.sortOrder));
-    setScheduleId(topic.scheduleId ?? "");
-    setMessage(undefined);
-    setError(undefined);
-    setFieldError(undefined);
-    setGenerateStatus(null);
-  }
-
-  async function handleSave(event: React.FormEvent) {
-    event.preventDefault();
+  async function saveCurrent(): Promise<boolean> {
     const validationError = validateRequired();
     if (validationError) {
       setFieldError(validationError);
       setError(undefined);
       setMessage(undefined);
-      return;
+      return false;
     }
 
     setPending(true);
@@ -849,7 +891,7 @@ function TopicsSection({
     setPending(false);
     if (!result.ok) {
       setError(result.error);
-      return;
+      return false;
     }
 
     const topic = (result.data as { topic?: TopicRow }).topic;
@@ -860,12 +902,110 @@ function TopicsSection({
           (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
         );
       });
+      const form = formFromTopic(topic);
       setSelection(topic.id);
+      setName(form.name);
+      setKeywords(form.keywords);
+      setSortOrder(form.sortOrder);
+      setScheduleId(form.scheduleId);
+      setBaseline(form);
       setMessage(selection === "new" ? "Topic added." : "Topic updated.");
     } else {
+      setBaseline({
+        name: payload.name,
+        keywords: payload.keywords,
+        sortOrder: String(payload.sortOrder),
+        scheduleId: payload.scheduleId ?? "",
+      });
       setMessage(selection === "new" ? "Topic added." : "Topic updated.");
     }
     router.refresh();
+    return true;
+  }
+
+  function closeLeaveDialog(proceed: boolean) {
+    const resolve = leaveDialogResolver.current;
+    leaveDialogResolver.current = null;
+    setLeaveTarget(null);
+    resolve?.(proceed);
+  }
+
+  async function requestLeave(): Promise<boolean> {
+    if (!isDirty) {
+      return true;
+    }
+    if (leaveDialogResolver.current) {
+      return false;
+    }
+    return await new Promise<boolean>((resolve) => {
+      leaveDialogResolver.current = resolve;
+      setLeaveTarget("__external__");
+    });
+  }
+
+  async function navigateTo(next: "new" | string) {
+    if (next === selection) {
+      return;
+    }
+    if (!isDirty) {
+      applySelection(next);
+      return;
+    }
+    setLeaveTarget(next);
+  }
+
+  async function handleLeaveChoice(choice: "save" | "discard" | "stay") {
+    const target = leaveTarget;
+    if (choice === "stay" || target == null) {
+      if (target === "__external__") {
+        closeLeaveDialog(false);
+      } else {
+        setLeaveTarget(null);
+      }
+      return;
+    }
+
+    if (choice === "discard") {
+      if (target === "__external__") {
+        closeLeaveDialog(true);
+        return;
+      }
+      applySelection(target);
+      setLeaveTarget(null);
+      return;
+    }
+
+    const saved = await saveCurrent();
+    if (!saved) {
+      if (target === "__external__") {
+        closeLeaveDialog(false);
+      }
+      // Keep dialog closed on validation failure; errors show in the form.
+      setLeaveTarget(null);
+      return;
+    }
+
+    if (target === "__external__") {
+      closeLeaveDialog(true);
+      return;
+    }
+    applySelection(target);
+    setLeaveTarget(null);
+  }
+
+  useEffect(() => {
+    if (!leaveGuardRef) {
+      return;
+    }
+    leaveGuardRef.current = () => requestLeave();
+    return () => {
+      leaveGuardRef.current = null;
+    };
+  });
+
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault();
+    await saveCurrent();
   }
 
   async function toggleEnabled(topic: TopicRow) {
@@ -908,17 +1048,17 @@ function TopicsSection({
 
     const remaining = topics.filter((row) => row.id !== topic.id);
     setTopics(remaining);
-    if (remaining[0]) {
-      selectTopic(remaining[0]);
-    } else {
-      startAdd();
-    }
+    applySelection(remaining[0]?.id ?? "new");
     setMessage("Topic deleted.");
     router.refresh();
   }
 
   async function generateTopic(topic: TopicRow) {
     if (activeJob || generatePending) {
+      return;
+    }
+    if (isDirty) {
+      setGenerateStatus("Save changes before generating.");
       return;
     }
     if (!topic.enabled) {
@@ -978,12 +1118,12 @@ function TopicsSection({
   });
 
   const generateBlockedReason = selectedTopic
-    ? !selectedTopic.enabled
-      ? "Enable the topic before generating."
-      : !keywords.trim()
-        ? "Add keywords / notes before generating."
+    ? isDirty
+      ? "Save changes before generating."
+      : !selectedTopic.enabled
+        ? "Enable the topic before generating."
         : !selectedTopic.keywords.trim()
-          ? "Save changes before generating."
+          ? "Add keywords / notes before generating."
           : activeJob
             ? `Job ${activeJob.id} in progress…`
             : null
@@ -1014,7 +1154,11 @@ function TopicsSection({
             overflow: "auto",
           }}
         >
-          <button type="button" style={listItemStyle(selection === "new")} onClick={startAdd}>
+          <button
+            type="button"
+            style={listItemStyle(selection === "new")}
+            onClick={() => void navigateTo("new")}
+          >
             + Add topic
           </button>
           {topics.length === 0 ? (
@@ -1027,7 +1171,7 @@ function TopicsSection({
                 key={topic.id}
                 type="button"
                 style={listItemStyle(selection === topic.id)}
-                onClick={() => selectTopic(topic)}
+                onClick={() => void navigateTo(topic.id)}
               >
                 <span style={{ display: "block", fontWeight: selection === topic.id ? 600 : 400 }}>
                   {topic.name}
@@ -1044,6 +1188,11 @@ function TopicsSection({
         <div>
           <h3 style={{ ...headingStyle, marginTop: 0 }}>
             {selection === "new" ? "New topic" : selectedTopic?.name ?? "Topic"}
+            {isDirty ? (
+              <span style={{ marginLeft: "0.5rem", color: "#866", fontSize: "0.85rem", fontWeight: 400 }}>
+                unsaved
+              </span>
+            ) : null}
           </h3>
 
           <form onSubmit={(event) => void handleSave(event)} style={{ display: "grid", gap: "0.75rem" }}>
@@ -1112,7 +1261,7 @@ function TopicsSection({
             </div>
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
-              <button type="submit" disabled={pending} style={buttonStyle}>
+              <button type="submit" disabled={pending || !isDirty} style={buttonStyle}>
                 {selection === "new" ? "Create topic" : "Save changes"}
               </button>
               {selectedTopic ? (
@@ -1146,6 +1295,49 @@ function TopicsSection({
               ) : null}
             </div>
           </form>
+
+          {leaveTarget != null ? (
+            <div
+              role="dialog"
+              aria-label="Unsaved changes"
+              style={{
+                marginTop: "1rem",
+                padding: "0.85rem 1rem",
+                border: "1px solid #c9b48a",
+                background: "#fff8ea",
+              }}
+            >
+              <p style={{ margin: "0 0 0.75rem", fontSize: "0.95rem" }}>
+                You have unsaved changes. Save them, discard them, or stay on this topic?
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  disabled={pending}
+                  style={buttonStyle}
+                  onClick={() => void handleLeaveChoice("save")}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  style={buttonStyle}
+                  onClick={() => void handleLeaveChoice("discard")}
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  style={buttonStyle}
+                  onClick={() => void handleLeaveChoice("stay")}
+                >
+                  Stay
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {fieldError ? <p style={errorStyle}>{fieldError}</p> : null}
           <StatusMessage message={message} error={error} />
@@ -1900,6 +2092,7 @@ function resolveAdminTabHash(raw: string): AdminTabId | null {
 
 export function AdminClient({ data }: { data: AdminInitialData }) {
   const [tab, setTab] = useState<AdminTabId>("jobs");
+  const topicsLeaveGuardRef = useRef<(() => Promise<boolean>) | null>(null);
 
   useEffect(() => {
     const fromHash = window.location.hash.replace(/^#/, "");
@@ -1909,7 +2102,13 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
     }
   }, []);
 
-  function selectTab(next: AdminTabId) {
+  async function selectTab(next: AdminTabId) {
+    if (tab === "topics" && next !== "topics" && topicsLeaveGuardRef.current) {
+      const ok = await topicsLeaveGuardRef.current();
+      if (!ok) {
+        return;
+      }
+    }
     setTab(next);
     window.history.replaceState(null, "", `#${next}`);
   }
@@ -1958,7 +2157,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
             type="button"
             style={tabButtonStyle(tab === item.id)}
             aria-current={tab === item.id ? "page" : undefined}
-            onClick={() => selectTab(item.id)}
+            onClick={() => void selectTab(item.id)}
           >
             {item.label}
           </button>
@@ -1969,7 +2168,11 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
       {tab === "people" ? <PeopleSection initialUsers={data.users} /> : null}
       {tab === "prompt" ? <PromptSection initialPrompt={data.prompt} /> : null}
       {tab === "topics" ? (
-        <TopicsSection initialTopics={data.topics} schedules={data.schedules} />
+        <TopicsSection
+          initialTopics={data.topics}
+          schedules={data.schedules}
+          leaveGuardRef={topicsLeaveGuardRef}
+        />
       ) : null}
       {tab === "schedules" ? <SchedulesSection initialSchedules={data.schedules} /> : null}
       {tab === "about" ? <AboutSection initialAbout={data.about} /> : null}

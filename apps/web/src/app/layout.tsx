@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, Syne } from "next/font/google";
+import { IBM_Plex_Sans, Manrope } from "next/font/google";
 
 import "./globals.css";
 
-const display = Syne({
-  subsets: ["latin"],
+const display = Manrope({
+  subsets: ["latin", "cyrillic", "cyrillic-ext"],
   variable: "--font-display",
   weight: ["600", "700", "800"],
 });
 
 const sans = IBM_Plex_Sans({
-  subsets: ["latin"],
+  subsets: ["latin", "cyrillic", "cyrillic-ext"],
   variable: "--font-sans",
   weight: ["400", "500", "600"],
 });

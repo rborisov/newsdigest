@@ -9,6 +9,7 @@ import {
 import { spawnAgent as defaultSpawnAgent } from "./cursor";
 import type { StoryFingerprint } from "./dedup";
 import { normalizeStoryFingerprints } from "./dedup";
+import { releaseAgentMutexBestEffort } from "./agent-mutex";
 import { prisma as defaultPrisma } from "./db";
 import { appendJobLogLine, jobLogPath } from "./job-logs";
 import { buildTopicPublishPrompt } from "./prompt";
@@ -82,6 +83,7 @@ export async function failJobWithError(
     }),
   ]);
   appendJobLogLine(jobId, `job failed: ${error}`);
+  releaseAgentMutexBestEffort();
 }
 
 async function markStepRunning(stepId: string, deps: PipelineDeps = {}) {
@@ -274,6 +276,7 @@ export async function completeTopicPublishStep(
     data: { status: GenerationJobStatus.completed, error: null },
   });
   appendJobLogLine(jobId, "job completed");
+  releaseAgentMutexBestEffort();
 
   return { ok: true, jobCompleted: true, advanced: false, nextStepId: null };
 }

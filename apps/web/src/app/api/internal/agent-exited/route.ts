@@ -2,6 +2,7 @@ import { GenerationJobStatus, GenerationStepStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
+import { releaseAgentMutexBestEffort } from "@/lib/agent-mutex";
 import {
   completeTopicPublishStep,
   failJobWithError,
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
     job.status === GenerationJobStatus.completed ||
     job.status === GenerationJobStatus.failed
   ) {
+    releaseAgentMutexBestEffort();
     return NextResponse.json({ ok: true, ignored: true, reason: `job_${job.status}` });
   }
 
@@ -188,6 +190,7 @@ export async function POST(request: Request) {
         },
       });
       appendJobLogLine(jobId, `job completed with step failures: ${message}`);
+      releaseAgentMutexBestEffort();
       return NextResponse.json({ ok: true, failedStep: true, jobCompleted: true, jobId });
     }
 

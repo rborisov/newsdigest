@@ -1,5 +1,6 @@
 import { GenerationJobStatus, TriggerType } from "@prisma/client";
 
+import { tryAcquireAgentMutex } from "./agent-mutex";
 import { prisma as defaultPrisma } from "./db";
 import {
   createPipelineSteps,
@@ -131,6 +132,15 @@ export async function triggerGeneration(
     }
   }
 
+  const mutex = tryAcquireAgentMutex(`newsdigest:${input.triggeredBy}`);
+  if (!mutex.ok) {
+    return {
+      ok: false,
+      error: mutex.error,
+      status: 409,
+    };
+  }
+
   const job = await defaultPrisma.generationJob.create({
     data: {
       status: GenerationJobStatus.pending,
@@ -158,6 +168,8 @@ export async function triggerGeneration(
       };
     }
 
+    // Held until job completed/failed (released in generation-pipeline).
+    void mutex;
     return { ok: true, jobId: job.id, pid: started.pid };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to trigger generation.";

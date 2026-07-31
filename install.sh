@@ -409,6 +409,7 @@ INTERNAL_API_KEY=${INTERNAL_API_KEY}
 CURSOR_API_KEY=${CURSOR_API_KEY}
 CURSOR_CLI_PATH=/usr/local/bin/agent
 AGENT_WORKSPACE=${WORKSPACE_DIR}
+AGENT_MUTEX_PATH=/var/lock/cursor-agent.lock
 
 TELEGRAPH_ACCESS_TOKEN=${TELEGRAPH_ACCESS_TOKEN}
 
@@ -454,7 +455,7 @@ install_cursor_cli() {
 }
 
 write_mcp_json() {
-  log "Writing MCP config ${MCP_JSON} and ${MCP_HOME_JSON}"
+  log "Writing MCP config ${MCP_JSON} (merge into ${MCP_HOME_JSON})"
   if [[ -z "${INTERNAL_API_KEY}" ]]; then
     load_env_defaults
   fi
@@ -479,14 +480,26 @@ write_mcp_json() {
 }
 EOF
   chmod 0644 "${MCP_JSON}"
-  cp -f "${MCP_JSON}" "${MCP_HOME_JSON}"
+
+  python3 -c "
+import json
+from pathlib import Path
+src = json.loads(Path('${MCP_JSON}').read_text())
+home = Path('${MCP_HOME_JSON}')
+try:
+    dst = json.loads(home.read_text()) if home.exists() else {}
+except Exception:
+    dst = {}
+if not isinstance(dst.get('mcpServers'), dict):
+    dst['mcpServers'] = {}
+dst['mcpServers']['news-digest'] = src['mcpServers']['news-digest']
+home.write_text(json.dumps(dst, indent=2) + chr(10))
+"
   chmod 0644 "${MCP_HOME_JSON}"
 
   write_cursor_cli_automation_config
 }
 
-# Headless digest jobs need --force-equivalent allowlists: without them, -p silently
-# rejects WebFetch/Shell/MCP ("environment blocked") and sandbox blocks 127.0.0.1.
 write_cursor_cli_automation_config() {
   log "Writing Cursor CLI automation permissions (~/.cursor/cli-config.json)"
   mkdir -p /root/.cursor
@@ -500,6 +513,8 @@ write_cursor_cli_automation_config() {
       "Write(/tmp/**)",
       "Write(/opt/newsdigest/data/**)",
       "Write(/opt/newsdigest/workspace/**)",
+      "Write(/opt/verified-tours/data/**)",
+      "Write(/opt/verified-tours/workspace/**)",
       "WebFetch(*)",
       "Mcp(*:*)"
     ],
@@ -520,7 +535,7 @@ EOF
     "default": "allow",
     "allow": ["127.0.0.1", "localhost", "0.0.0.0/0"]
   },
-  "additionalReadonlyPaths": ["/opt/newsdigest", "/opt/newsdigest/workspace"]
+  "additionalReadonlyPaths": ["/opt/newsdigest", "/opt/newsdigest/workspace", "/opt/verified-tours", "/opt/verified-tours/workspace"]
 }
 EOF
   chmod 0644 /root/.cursor/sandbox.json

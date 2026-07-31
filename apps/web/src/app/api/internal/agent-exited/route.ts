@@ -9,6 +9,7 @@ import {
   startStep,
 } from "@/lib/generation-pipeline";
 import { appendJobLogLine } from "@/lib/job-logs";
+import { recordStepTokenUsage } from "@/lib/record-step-token-usage";
 import { requireInternalApi } from "@/lib/require-internal";
 
 type Body = {
@@ -40,6 +41,14 @@ export async function POST(request: Request) {
 
   if (!jobId) {
     return NextResponse.json({ error: "jobId is required." }, { status: 400 });
+  }
+
+  if (stepId) {
+    try {
+      await recordStepTokenUsage(jobId, stepId);
+    } catch {
+      // Usage recording must never block exit handling.
+    }
   }
 
   const job = await prisma.generationJob.findUnique({

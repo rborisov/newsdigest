@@ -2066,6 +2066,295 @@ function KeysSection({
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return "—";
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatTokens(n: number | null | undefined): string {
+  if (n == null) {
+    return "—";
+  }
+  return n.toLocaleString();
+}
+
+type SystemMetricsPayload = {
+  serverTime: string;
+  disk: {
+    path: string;
+    totalBytes: number;
+    freeBytes: number;
+    usedBytes: number;
+  } | null;
+  digests: {
+    root: string;
+    database: { path: string; bytes: number; exists: boolean };
+    illustrations: { path: string; bytes: number; fileCount: number; exists: boolean };
+    jobLogs: { path: string; bytes: number; fileCount: number; exists: boolean };
+    workspace: { path: string; bytes: number; fileCount: number; exists: boolean };
+    totalBytes: number;
+  };
+  telegraph: {
+    storage: "external";
+    note: string;
+    localHtmlBytesApprox: number;
+    topicPageCount: number;
+  };
+  cursor: {
+    apiKeyConfigured: boolean;
+    note: string;
+    totals: {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+      totalTokens: number;
+      stepsWithUsage: number;
+    };
+    recentSteps: Array<{
+      id: string;
+      jobId: string;
+      topicName: string | null;
+      model: string | null;
+      totalTokens: number | null;
+      inputTokens: number | null;
+      outputTokens: number | null;
+      updatedAt: string;
+    }>;
+  };
+};
+
+function SystemSection() {
+  const [metrics, setMetrics] = useState<SystemMetricsPayload | null>(null);
+  const [error, setError] = useState<string>();
+  const [pending, setPending] = useState(false);
+
+  const load = useCallback(async () => {
+    setPending(true);
+    setError(undefined);
+    const result = await adminFetch("/api/admin/system");
+    setPending(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setMetrics(result.data as SystemMetricsPayload);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const freePct =
+    metrics?.disk && metrics.disk.totalBytes > 0
+      ? Math.round((metrics.disk.freeBytes / metrics.disk.totalBytes) * 100)
+      : null;
+
+  return (
+    <section style={sectionStyle}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
+        <h2 style={{ ...headingStyle, marginBottom: 0 }}>System</h2>
+        <button type="button" disabled={pending} style={buttonStyle} onClick={() => void load()}>
+          {pending ? "Refreshing…" : "Refresh"}
+        </button>
+        {metrics ? (
+          <span style={{ color: "#666", fontSize: "0.85rem" }}>
+            Updated {new Date(metrics.serverTime).toLocaleString()}
+          </span>
+        ) : null}
+      </div>
+      <p style={{ margin: "0.5rem 0 0", color: "#555", fontSize: "0.95rem" }}>
+        Host disk, digest storage breakdown, and Cursor token usage. More controls will land here later.
+      </p>
+
+      <StatusMessage error={error} />
+
+      {metrics ? (
+        <>
+          <h3 style={{ ...headingStyle, marginTop: "1.5rem" }}>Disk</h3>
+          {metrics.disk ? (
+            <table style={tableStyle}>
+              <tbody>
+                <tr>
+                  <td style={cellStyle}>Mount / path</td>
+                  <td style={cellStyle}>
+                    <code>{metrics.disk.path}</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td style={cellStyle}>Free</td>
+                  <td style={cellStyle}>
+                    {formatBytes(metrics.disk.freeBytes)}
+                    {freePct != null ? ` (${freePct}%)` : ""}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={cellStyle}>Used</td>
+                  <td style={cellStyle}>{formatBytes(metrics.disk.usedBytes)}</td>
+                </tr>
+                <tr>
+                  <td style={cellStyle}>Total</td>
+                  <td style={cellStyle}>{formatBytes(metrics.disk.totalBytes)}</td>
+                </tr>
+              </tbody>
+            </table>
+          ) : (
+            <p style={messageStyle}>Disk stats unavailable on this host.</p>
+          )}
+
+          <h3 style={{ ...headingStyle, marginTop: "1.5rem" }}>Digest storage</h3>
+          <p style={{ margin: "0.25rem 0 0", color: "#666", fontSize: "0.85rem" }}>
+            Data root: <code>{metrics.digests.root}</code>
+          </p>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={cellStyle}>Item</th>
+                <th style={cellStyle}>Size</th>
+                <th style={cellStyle}>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={cellStyle}>SQLite DB</td>
+                <td style={cellStyle}>{formatBytes(metrics.digests.database.bytes)}</td>
+                <td style={cellStyle}>
+                  <code style={{ fontSize: "0.8rem" }}>{metrics.digests.database.path}</code>
+                  {metrics.digests.database.exists ? "" : " (missing)"}
+                </td>
+              </tr>
+              <tr>
+                <td style={cellStyle}>Illustrations</td>
+                <td style={cellStyle}>{formatBytes(metrics.digests.illustrations.bytes)}</td>
+                <td style={cellStyle}>
+                  {metrics.digests.illustrations.fileCount} files ·{" "}
+                  <code style={{ fontSize: "0.8rem" }}>{metrics.digests.illustrations.path}</code>
+                </td>
+              </tr>
+              <tr>
+                <td style={cellStyle}>Job logs</td>
+                <td style={cellStyle}>{formatBytes(metrics.digests.jobLogs.bytes)}</td>
+                <td style={cellStyle}>
+                  {metrics.digests.jobLogs.fileCount} files ·{" "}
+                  <code style={{ fontSize: "0.8rem" }}>{metrics.digests.jobLogs.path}</code>
+                </td>
+              </tr>
+              <tr>
+                <td style={cellStyle}>Agent workspace</td>
+                <td style={cellStyle}>{formatBytes(metrics.digests.workspace.bytes)}</td>
+                <td style={cellStyle}>
+                  {metrics.digests.workspace.fileCount} files ·{" "}
+                  <code style={{ fontSize: "0.8rem" }}>{metrics.digests.workspace.path}</code>
+                </td>
+              </tr>
+              <tr>
+                <td style={cellStyle}>
+                  <strong>Local total</strong>
+                </td>
+                <td style={cellStyle}>
+                  <strong>{formatBytes(metrics.digests.totalBytes)}</strong>
+                </td>
+                <td style={cellStyle} />
+              </tr>
+              <tr>
+                <td style={cellStyle}>Board HTML cache</td>
+                <td style={cellStyle}>{formatBytes(metrics.telegraph.localHtmlBytesApprox)}</td>
+                <td style={cellStyle}>
+                  {metrics.telegraph.topicPageCount} topic pages (inside DB)
+                </td>
+              </tr>
+              <tr>
+                <td style={cellStyle}>Telegra.ph</td>
+                <td style={cellStyle}>external</td>
+                <td style={cellStyle}>{metrics.telegraph.note}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3 style={{ ...headingStyle, marginTop: "1.5rem" }}>AI token usage</h3>
+          <p style={{ margin: "0.25rem 0 0", color: "#666", fontSize: "0.85rem" }}>
+            {metrics.cursor.note} API key:{" "}
+            {metrics.cursor.apiKeyConfigured ? "configured" : "missing"}.
+          </p>
+          <table style={tableStyle}>
+            <tbody>
+              <tr>
+                <td style={cellStyle}>Total tokens</td>
+                <td style={cellStyle}>{formatTokens(metrics.cursor.totals.totalTokens)}</td>
+              </tr>
+              <tr>
+                <td style={cellStyle}>Input</td>
+                <td style={cellStyle}>{formatTokens(metrics.cursor.totals.inputTokens)}</td>
+              </tr>
+              <tr>
+                <td style={cellStyle}>Output</td>
+                <td style={cellStyle}>{formatTokens(metrics.cursor.totals.outputTokens)}</td>
+              </tr>
+              <tr>
+                <td style={cellStyle}>Cache read / write</td>
+                <td style={cellStyle}>
+                  {formatTokens(metrics.cursor.totals.cacheReadTokens)} /{" "}
+                  {formatTokens(metrics.cursor.totals.cacheWriteTokens)}
+                </td>
+              </tr>
+              <tr>
+                <td style={cellStyle}>Steps with usage</td>
+                <td style={cellStyle}>{metrics.cursor.totals.stepsWithUsage}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {metrics.cursor.recentSteps.length > 0 ? (
+            <>
+              <h3 style={{ ...headingStyle, marginTop: "1.25rem" }}>Recent steps</h3>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={cellStyle}>When</th>
+                    <th style={cellStyle}>Topic</th>
+                    <th style={cellStyle}>Model</th>
+                    <th style={cellStyle}>In / Out</th>
+                    <th style={cellStyle}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metrics.cursor.recentSteps.map((step) => (
+                    <tr key={step.id}>
+                      <td style={cellStyle}>{new Date(step.updatedAt).toLocaleString()}</td>
+                      <td style={cellStyle}>{step.topicName ?? "—"}</td>
+                      <td style={cellStyle}>{step.model ?? "—"}</td>
+                      <td style={cellStyle}>
+                        {formatTokens(step.inputTokens)} / {formatTokens(step.outputTokens)}
+                      </td>
+                      <td style={cellStyle}>{formatTokens(step.totalTokens)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : (
+            <p style={messageStyle}>No recorded usage yet — run a topic Generate after deploy.</p>
+          )}
+        </>
+      ) : !error && pending ? (
+        <p style={messageStyle}>Loading…</p>
+      ) : null}
+    </section>
+  );
+}
+
 const ADMIN_TABS = [
   { id: "jobs", label: "Jobs" },
   { id: "people", label: "People" },
@@ -2073,6 +2362,7 @@ const ADMIN_TABS = [
   { id: "topics", label: "Topics" },
   { id: "schedules", label: "Schedules" },
   { id: "about", label: "About" },
+  { id: "system", label: "System" },
   { id: "keys", label: "API keys" },
 ] as const;
 
@@ -2138,7 +2428,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
 
       <section className="hero" style={{ marginBottom: "1.25rem" }}>
         <h1 style={{ maxWidth: "none", fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>Admin</h1>
-        <p>Jobs, people, prompt, topics, schedules, and API keys.</p>
+        <p>Jobs, people, prompt, topics, schedules, system, and API keys.</p>
       </section>
 
       <nav
@@ -2176,6 +2466,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
       ) : null}
       {tab === "schedules" ? <SchedulesSection initialSchedules={data.schedules} /> : null}
       {tab === "about" ? <AboutSection initialAbout={data.about} /> : null}
+      {tab === "system" ? <SystemSection /> : null}
       {tab === "keys" ? (
         <KeysSection
           initialTelegraph={data.telegraph}

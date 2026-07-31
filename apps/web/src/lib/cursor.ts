@@ -53,7 +53,7 @@ export function spawnAgent(
         `[${new Date().toISOString()}] log file: ${logPath}\n` +
         `[${new Date().toISOString()}] cli: ${command}\n` +
         `[${new Date().toISOString()}] workspace: ${workspace}\n` +
-        `[${new Date().toISOString()}] flags: -p --force --sandbox disabled --trust --approve-mcps\n`,
+        `[${new Date().toISOString()}] flags: -p --force --sandbox disabled --trust --approve-mcps --output-format stream-json\n`,
       { flag: "a" },
     );
     if (stepId && logPath !== parentLogPath) {
@@ -92,15 +92,18 @@ log_both() {
 
 # --force: required in -p so MCP/shell/fetch are not silently "User rejected"
 # --sandbox disabled: default sandbox blocks 127.0.0.1 (portal MCP) and most news sites
-AGENT_ARGS=(-p --force --sandbox disabled --trust --approve-mcps --workspace "\$WORKSPACE")
+# --output-format stream-json: structured events + per-turn token usage for System tab
+AGENT_ARGS=(-p --force --sandbox disabled --trust --approve-mcps --output-format stream-json --workspace "\$WORKSPACE")
+STREAM_LOG="\${LOG}.stream.jsonl"
 
 if command -v stdbuf >/dev/null 2>&1; then
-  stdbuf -oL -eL "\$AGENT_BIN" "\${AGENT_ARGS[@]}" "\$PROMPT" >>"\$LOG" 2>&1 &
+  stdbuf -oL -eL "\$AGENT_BIN" "\${AGENT_ARGS[@]}" "\$PROMPT" >"\$STREAM_LOG" 2>>"\$LOG" &
 else
-  "\$AGENT_BIN" "\${AGENT_ARGS[@]}" "\$PROMPT" >>"\$LOG" 2>&1 &
+  "\$AGENT_BIN" "\${AGENT_ARGS[@]}" "\$PROMPT" >"\$STREAM_LOG" 2>>"\$LOG" &
 fi
 pid=\$!
 log_both "[\$(ts)] agent pid=\$pid"
+log_both "[\$(ts)] stream-json log: \$STREAM_LOG"
 
 while kill -0 "\$pid" 2>/dev/null; do
   log_both "[\$(ts)] heartbeat: agent still running (pid=\$pid)"

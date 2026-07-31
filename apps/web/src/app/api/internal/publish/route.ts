@@ -13,6 +13,7 @@ import {
   completeTopicPublishStep,
   failTopicPublishStep,
 } from "@/lib/generation-pipeline";
+import { recordStepTokenUsage } from "@/lib/record-step-token-usage";
 import {
   buildExistingPublishResponse,
   getPublishSoftFailReason,
@@ -107,6 +108,12 @@ async function advanceAfterPublish(
   const resolvedStepId = await resolveTopicPublishStepId(jobId, stepId, topicName);
   if (!resolvedStepId) {
     return null;
+  }
+
+  try {
+    await recordStepTokenUsage(jobId, resolvedStepId);
+  } catch {
+    // ignore
   }
 
   return completeTopicPublishStep(jobId, resolvedStepId, {}, note ? { note } : {});

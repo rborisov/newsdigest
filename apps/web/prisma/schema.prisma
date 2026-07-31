@@ -139,6 +139,13 @@ model GenerationStep {
   draftHtml        String?
   draftStoriesJson String?
   error            String?
+  /// Token usage from Cursor CLI stream-json (null until recorded)
+  inputTokens      Int?
+  outputTokens     Int?
+  cacheReadTokens  Int?
+  cacheWriteTokens Int?
+  totalTokens      Int?
+  model            String?
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 

@@ -34,6 +34,11 @@ export function jobLogPath(jobId: string, stepId?: string): string {
   return path.join(dir, `${jobId}.log`);
 }
 
+/** NDJSON from Cursor CLI `--output-format stream-json` (token usage + events). */
+export function agentStreamLogPath(jobId: string, stepId?: string): string {
+  return `${jobLogPath(jobId, stepId)}.stream.jsonl`;
+}
+
 export function ensureJobLogDir(): string {
   const dir = resolveJobLogDir();
   mkdirSync(dir, { recursive: true });

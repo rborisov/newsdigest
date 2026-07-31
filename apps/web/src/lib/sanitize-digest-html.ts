@@ -275,7 +275,9 @@ function extractClass(attrString: string): string | null {
 }
 
 function escapeText(value: string): string {
-  return value
+  // Agents often emit already-encoded entities (&gt;, &amp;, &#…;). Decode first so we
+  // escape once; otherwise `&gt;` becomes `&amp;gt;` and shows as literal "&gt;" on the board.
+  return decodeHtmlEntities(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");

@@ -67,6 +67,24 @@ describe("sanitizeDigestHtml", () => {
     const html = sanitizeDigestHtml('<div class="evil"><p>Story</p></div>');
     assert.equal(html, "");
   });
+
+  it("does not double-escape already encoded entities like &gt; and &amp;", () => {
+    const html = sanitizeDigestHtml(
+      "<p>рост от &gt;20% сейчас до &gt;100% к 2028; AI &amp; RAN</p>",
+    );
+    assert.match(html, /от &gt;20%/);
+    assert.match(html, /до &gt;100%/);
+    assert.match(html, /AI &amp; RAN/);
+    assert.doesNotMatch(html, /&amp;gt;/);
+    assert.doesNotMatch(html, /&amp;amp;/);
+  });
+
+  it("escapes raw angle brackets once", () => {
+    const html = sanitizeDigestHtml("<p>score > 20% and a < b</p>");
+    // Tag parser may treat `< b` oddly; at least `>` must become a single &gt;
+    assert.match(html, /score &gt; 20%/);
+    assert.doesNotMatch(html, /&amp;gt;/);
+  });
 });
 
 describe("stripLeadingTopicHeading", () => {

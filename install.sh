@@ -167,11 +167,12 @@ install_packages() {
 ensure_build_tree() {
   mkdir -p "$(dirname "${BUILD_ROOT}")"
   if [[ -d "${BUILD_ROOT}/.git" ]]; then
-    log "Updating build cache at ${BUILD_ROOT} (keeps node_modules)"
+    log "Updating build cache at ${BUILD_ROOT}"
     git -C "${BUILD_ROOT}" remote set-url origin "${REPO_URL}"
     git -C "${BUILD_ROOT}" fetch --depth 1 origin main
-    # Hard reset tracked files only — leaves node_modules / .next cache intact
+    # Hard reset tracked files only — leaves compiled artifacts intact
     git -C "${BUILD_ROOT}" reset --hard FETCH_HEAD
+    git -C "${BUILD_ROOT}" gc --prune=all --quiet 2>/dev/null || true
   else
     log "Cloning build cache into ${BUILD_ROOT} (kept across updates)"
     rm -rf "${BUILD_ROOT}"
@@ -294,6 +295,35 @@ install_runtime_node_deps() {
     npm install --omit=dev --ignore-scripts --no-audit --no-fund
   )
   printf '%s\n' "${pkgs_hash}" > "${hash_file}"
+}
+
+# After staging the slim runtime, drop build-tree node_modules / Next cache / npm cache.
+# Next update re-runs npm ci (needs RAM/swap) instead of keeping ~1G idle on disk.
+prune_build_caches() {
+  log "Pruning build caches (node_modules, Next cache, npm cache)…"
+  rm -rf \
+    "${BUILD_ROOT}/node_modules" \
+    "${BUILD_ROOT}/apps/web/node_modules" \
+    "${BUILD_ROOT}/apps/worker/node_modules" \
+    "${BUILD_ROOT}/apps/mcp-server/node_modules" \
+    "${BUILD_ROOT}/apps/web/.next/cache" \
+    "${BUILD_ROOT}/apps/web/.next/trace" \
+    /root/.npm/_cacache \
+    /tmp/npm-cache \
+    /tmp/.npm
+  rm -f "${BUILD_ROOT}/.install-npm-hash"
+
+  # Keep standalone + worker/mcp dist so an unchanged rev can skip compile.
+  if [[ -d "${BUILD_ROOT}/apps/web/.next" ]]; then
+    find "${BUILD_ROOT}/apps/web/.next" -mindepth 1 -maxdepth 1 ! -name standalone -exec rm -rf {} +
+  fi
+
+  if command -v npm >/dev/null 2>&1; then
+    npm cache clean --force >/dev/null 2>&1 || true
+  fi
+  if command -v journalctl >/dev/null 2>&1; then
+    journalctl --vacuum-size=80M >/dev/null 2>&1 || true
+  fi
 }
 
 load_env_defaults() {
@@ -685,9 +715,10 @@ install_app() {
 
   stage_runtime_from_build
   install_runtime_node_deps
+  prune_build_caches
 
-  log "Build cache kept at ${BUILD_ROOT} (runtime stays slim under ${INSTALL_ROOT})"
-  du -sh "${INSTALL_ROOT}" "${DATA_DIR}" "${BUILD_ROOT}" 2>/dev/null || true
+  log "Runtime ${INSTALL_ROOT}; slim build tree ${BUILD_ROOT} (no node_modules between updates)"
+  du -sh "${INSTALL_ROOT}" "${DATA_DIR}" "${BUILD_ROOT}" /root/.npm 2>/dev/null || true
 }
 
 start_services() {
@@ -849,7 +880,7 @@ main() {
 
   finish_marker
   log "Install finished (mode=${mode}, slim runtime under ${INSTALL_ROOT})."
-  log "Build cache: ${BUILD_ROOT} (reused on updates; not served)."
+  log "Build tree: ${BUILD_ROOT} (source + compiled artifacts; node_modules pruned after each install)."
 }
 
 main "$@"

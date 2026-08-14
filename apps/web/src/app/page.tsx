@@ -22,36 +22,40 @@ export default async function HomePage() {
   const isAdmin = session?.user?.isAdmin ?? false;
 
   return (
-    <main className="shell">
-      <SiteHeader
-        actions={
-          isSignedIn ? (
-            <>
-              {isAdmin ? (
-                <Link href="/admin" className="nav-link">
-                  Admin
+    <main className="home-page">
+      <header className="home-page-header">
+        <div className="shell shell-wide">
+          <SiteHeader
+            actions={
+              isSignedIn ? (
+                <>
+                  {isAdmin ? (
+                    <Link href="/admin" className="nav-link">
+                      Admin
+                    </Link>
+                  ) : null}
+                  <SignOutButton />
+                </>
+              ) : (
+                <Link href="/auth/signin" className="nav-link">
+                  Sign in
                 </Link>
-              ) : null}
-              <SignOutButton />
-            </>
-          ) : (
-            <Link href="/auth/signin" className="nav-link">
-              Sign in
-            </Link>
-          )
-        }
-      />
+              )
+            }
+          />
 
-      <section className="hero">
-        <h1>News digest</h1>
-        <p>
-          Scheduled and on-demand digests from your topics — researched by an agent and
-          published to Telegra.ph.
-        </p>
-      </section>
+          <section className="hero hero-compact">
+            <h1>News digest</h1>
+            <p>
+              Scheduled and on-demand digests from your topics — researched by an agent and
+              published to Telegra.ph.
+            </p>
+          </section>
+        </div>
+      </header>
 
-      <div className="home-layout">
-        <aside className="home-sidebar panel">
+      <aside className="home-sidebar" aria-label="Cached topics">
+        <div className="home-sidebar-inner">
           <h2 className="home-sidebar-title">Topics</h2>
           {indexUrl ? (
             <a
@@ -94,8 +98,10 @@ export default async function HomePage() {
               })}
             </ul>
           )}
-        </aside>
+        </div>
+      </aside>
 
+      <div className="home-main">
         <section className="home-board panel">
           <h2>Current topics</h2>
           {board.length === 0 ? (
@@ -146,7 +152,11 @@ export default async function HomePage() {
         </section>
       </div>
 
-      <SiteFooter links={siteFooterLinks(about)} />
+      <footer className="home-page-footer">
+        <div className="shell shell-wide">
+          <SiteFooter links={siteFooterLinks(about)} />
+        </div>
+      </footer>
     </main>
   );
 }

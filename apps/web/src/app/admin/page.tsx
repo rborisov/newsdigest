@@ -1,6 +1,7 @@
 import { AdminClient } from "@/app/admin/admin-ui";
 import { requireAdmin } from "@/lib/require-admin";
 import { prisma } from "@/lib/db";
+import { DEFAULT_REVIEW_TEMPLATE } from "@/lib/story-review";
 import { syncScheduleHumanFieldsFromCron } from "@/lib/sync-schedule-human";
 
 export default async function AdminPage() {
@@ -48,6 +49,7 @@ export default async function AdminPage() {
         boardStaleDays: true,
         displayTimezone: true,
         language: true,
+        reviewTemplate: true,
       },
     }),
     prisma.telegraphMeta.findUnique({
@@ -117,7 +119,10 @@ export default async function AdminPage() {
         users,
         topics,
         schedules,
-        prompt,
+        prompt: {
+          ...prompt,
+          reviewTemplate: prompt.reviewTemplate?.trim() || DEFAULT_REVIEW_TEMPLATE,
+        },
         about,
         telegraph: {
           accessTokenConfigured: telegraph.accessToken.trim().length > 0,

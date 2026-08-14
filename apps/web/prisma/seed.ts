@@ -1,5 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 
+import { DEFAULT_REVIEW_TEMPLATE } from "../src/lib/story-review";
+
 const prisma = new PrismaClient();
 
 const DEFAULT_PROMPT_TEMPLATE = `You are a news digest editor. Compile a concise digest of recent news for the topics below.
@@ -53,7 +55,13 @@ async function main() {
       boardStaleDays: 0,
       displayTimezone: "UTC",
       language: "English",
+      reviewTemplate: DEFAULT_REVIEW_TEMPLATE,
     },
+  });
+
+  await prisma.promptConfig.updateMany({
+    where: { id: "default", reviewTemplate: "" },
+    data: { reviewTemplate: DEFAULT_REVIEW_TEMPLATE },
   });
 
   await prisma.telegraphMeta.upsert({

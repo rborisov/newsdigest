@@ -44,6 +44,7 @@ type PromptConfigRow = {
   boardStaleDays: number;
   displayTimezone: string;
   language: string;
+  reviewTemplate: string;
 };
 
 type TelegraphMetaRow = {
@@ -560,6 +561,7 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
   const [boardStaleDays, setBoardStaleDays] = useState(String(initialPrompt.boardStaleDays));
   const [displayTimezone, setDisplayTimezone] = useState(initialPrompt.displayTimezone || "UTC");
   const [language, setLanguage] = useState(initialPrompt.language || "English");
+  const [reviewTemplate, setReviewTemplate] = useState(initialPrompt.reviewTemplate || "");
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -578,6 +580,7 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
         boardStaleDays: Number(boardStaleDays),
         displayTimezone,
         language,
+        reviewTemplate,
       }),
     });
 
@@ -658,6 +661,20 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
             onChange={(event) => setTemplate(event.target.value)}
             style={{ ...inputStyle, fontFamily: "monospace", width: "100%" }}
           />
+        </label>
+        <label style={fieldStyle}>
+          Review prompt template
+          <textarea
+            required
+            rows={10}
+            value={reviewTemplate}
+            onChange={(event) => setReviewTemplate(event.target.value)}
+            style={{ ...inputStyle, fontFamily: "monospace", width: "100%" }}
+          />
+          <span style={{ color: "#666", fontSize: "0.85rem" }}>
+            Placeholders: {"{{STORY_ID}}"}, {"{{STORY_TITLE}}"}, {"{{STORY_URL}}"}, {"{{TOPIC_NAME}}"},{" "}
+            {"{{LANGUAGE}}"}, {"{{DATE}}"}
+          </span>
         </label>
         <button type="submit" disabled={pending} style={{ ...buttonStyle, alignSelf: "start" }}>
           Save prompt

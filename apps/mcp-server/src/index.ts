@@ -16,6 +16,16 @@ type PublishResponse = {
   idempotent?: boolean;
 };
 
+type ReviewPublishResponse = {
+  ok?: boolean;
+  error?: string;
+  reviewId?: string;
+  storyIndexId?: string;
+  reviewUrl?: string;
+  reviewPath?: string;
+  idempotent?: boolean;
+};
+
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
@@ -100,6 +110,59 @@ function createServer(): McpServer {
                 indexPath: data.indexPath ?? "",
                 topicPageId: data.topicPageId ?? data.publishedPageId,
                 publishedPageId: data.publishedPageId ?? data.topicPageId,
+                idempotent: data.idempotent ?? false,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "publish_story_review",
+    {
+      description:
+        "Publish a single-story AI review HTML page to Telegra.ph via the portal internal API. Call once when the review article is ready.",
+      inputSchema: {
+        reviewId: z.string().min(1).describe("Story review job ID from the agent prompt"),
+        title: z.string().min(1).describe("Review page title"),
+        htmlContent: z.string().min(1).describe("HTML body for the review page"),
+      },
+    },
+    async ({ reviewId, title, htmlContent }) => {
+      const response = await fetch(`${portalBaseUrl()}/api/internal/reviews/publish`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-key": requireEnv("INTERNAL_API_KEY"),
+        },
+        body: JSON.stringify({ reviewId, title, htmlContent }),
+      });
+
+      const data = (await response.json().catch(() => ({}))) as ReviewPublishResponse;
+
+      if (!response.ok) {
+        const message = data.error ?? `Publish failed with status ${response.status}`;
+        return {
+          content: [{ type: "text", text: message }],
+          isError: true,
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                ok: true,
+                reviewId: data.reviewId ?? reviewId,
+                storyIndexId: data.storyIndexId ?? "",
+                reviewUrl: data.reviewUrl ?? "",
+                reviewPath: data.reviewPath ?? "",
                 idempotent: data.idempotent ?? false,
               },
               null,

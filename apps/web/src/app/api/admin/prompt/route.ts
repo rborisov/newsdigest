@@ -40,6 +40,7 @@ export async function PATCH(request: Request) {
     boardStaleDays?: number;
     displayTimezone?: string;
     language?: string;
+    reviewTemplate?: string;
   };
 
   const existing = await prisma.promptConfig.findUnique({ where: { id: PROMPT_ID } });
@@ -53,6 +54,7 @@ export async function PATCH(request: Request) {
     boardStaleDays?: number;
     displayTimezone?: string;
     language?: string;
+    reviewTemplate?: string;
   } = {};
 
   if (body.template !== undefined) {
@@ -106,6 +108,14 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Language must be at most 80 characters." }, { status: 400 });
     }
     data.language = language;
+  }
+
+  if (body.reviewTemplate !== undefined) {
+    const reviewTemplate = body.reviewTemplate.trim();
+    if (!reviewTemplate) {
+      return NextResponse.json({ error: "Review template is required." }, { status: 400 });
+    }
+    data.reviewTemplate = reviewTemplate;
   }
 
   const prompt = await prisma.promptConfig.update({

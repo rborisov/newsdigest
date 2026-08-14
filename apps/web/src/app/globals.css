@@ -622,6 +622,16 @@ form:has(> .nav-link) {
   text-underline-offset: 2px;
 }
 
+.board-body .story-review-link,
+.board-body .story-review-admin {
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.board-body .story-review-admin.muted {
+  color: var(--muted);
+}
+
 .board-body hr {
   border: 0;
   border-top: 1px solid var(--line);

@@ -11,6 +11,8 @@ import { layoutBoardStoryBlocks } from "@/lib/topic-illustrations";
 import { sanitizeDigestHtml, stripLeadingTopicHeading } from "@/lib/sanitize-digest-html";
 import { HomeTopicsNav } from "@/app/home-topics-nav";
 import { loadTopicBoard } from "@/lib/topic-board";
+import { loadStoryReviewsForHtml } from "@/lib/load-story-reviews";
+import { enrichBoardHtmlWithReviewLinks } from "@/lib/story-review";
 
 export default async function HomePage() {
   const [session, { board, nav, indexUrl, displayTimezone }, about] = await Promise.all([
@@ -21,6 +23,11 @@ export default async function HomePage() {
 
   const isSignedIn = Boolean(session?.user?.email);
   const isAdmin = session?.user?.isAdmin ?? false;
+
+  const rawHtmlChunks = board.map((card) =>
+    layoutBoardStoryBlocks(stripLeadingTopicHeading(card.htmlContent, card.topicName)),
+  );
+  const reviewsByStoryId = await loadStoryReviewsForHtml(prisma, rawHtmlChunks);
 
   return (
     <main className="home-page">
@@ -64,12 +71,12 @@ export default async function HomePage() {
             <p className="muted">No topics on the board yet.</p>
           ) : (
             <div className="board-list">
-              {board.map((card) => {
-                const body = sanitizeDigestHtml(
-                  layoutBoardStoryBlocks(
-                    stripLeadingTopicHeading(card.htmlContent, card.topicName),
-                  ),
-                  card.topicId,
+              {board.map((card, index) => {
+                const rawHtml = rawHtmlChunks[index] ?? "";
+                const body = enrichBoardHtmlWithReviewLinks(
+                  sanitizeDigestHtml(rawHtml, card.topicId),
+                  reviewsByStoryId,
+                  { isAdmin },
                 );
                 return (
                   <article key={card.topicId} id={`topic-${card.topicId}`} className="board-card">

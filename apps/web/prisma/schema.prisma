@@ -83,6 +83,8 @@ model PromptConfig {
   displayTimezone String @default("UTC")
   /// Free-text language for {{LANGUAGE}} in the prompt (e.g. Russian, English).
   language        String @default("English")
+  /// Default template for per-story AI reviews (Telegra.ph).
+  reviewTemplate  String @default("")
   updatedAt       DateTime @updatedAt
 }
 
@@ -220,10 +222,33 @@ model StoryIndex {
   titleKey     String?
   firstSeenAt  DateTime @default(now())
 
-  topicPage TopicPage @relation(fields: [topicPageId], references: [id], onDelete: Cascade)
+  topicPage TopicPage    @relation(fields: [topicPageId], references: [id], onDelete: Cascade)
+  review    StoryReview?
 
   @@index([titleKey])
   @@index([firstSeenAt])
+}
+
+/// AI review of a single story, published to Telegra.ph.
+model StoryReview {
+  id            String    @id @default(cuid())
+  storyIndexId  String    @unique
+  status        String    @default("pending")
+  promptUsed    String    @default("")
+  title         String    @default("")
+  telegraphPath String    @default("")
+  telegraphUrl  String    @default("")
+  createdBy     String    @default("")
+  error         String?
+  pid           Int?
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  story StoryIndex @relation(fields: [storyIndexId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([publishedAt])
 }
 
 model AllowedUser {

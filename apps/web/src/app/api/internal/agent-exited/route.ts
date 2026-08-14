@@ -44,6 +44,45 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "jobId is required." }, { status: 400 });
   }
 
+  const storyReview = await prisma.storyReview.findUnique({
+    where: { id: jobId },
+    select: { id: true, status: true, telegraphUrl: true },
+  });
+  if (storyReview) {
+    if (storyReview.status === "published" || storyReview.status === "failed") {
+      releaseAgentMutexBestEffort();
+      return NextResponse.json({ ok: true, ignored: true, kind: "story_review", status: storyReview.status });
+    }
+    if (storyReview.telegraphUrl) {
+      await prisma.storyReview.update({
+        where: { id: jobId },
+        data: { status: "published", error: null },
+      });
+      releaseAgentMutexBestEffort();
+      appendJobLogLine(jobId, "agent-exited recovered story review: telegraphUrl present");
+      return NextResponse.json({ ok: true, recovered: true, kind: "story_review" });
+    }
+    const code = exitCode;
+    await prisma.storyReview.update({
+      where: { id: jobId },
+      data: {
+        status: "failed",
+        error:
+          code !== 0 && code !== null
+            ? `Agent exited with code ${code} without publishing a review.`
+            : "Agent exited without publishing a review.",
+      },
+    });
+    releaseAgentMutexBestEffort();
+    appendJobLogLine(jobId, `story review agent-exited failed (code=${code ?? "?"})`);
+    return NextResponse.json({ ok: true, failed: true, kind: "story_review" });
+  }
+
+  const job = await prisma.generationJob.findUnique({
+    where: { id: jobId },
+    select: { id: true, status: true },
+  });
+
   if (stepId) {
     try {
       await recordStepTokenUsage(jobId, stepId);
@@ -51,11 +90,6 @@ export async function POST(request: Request) {
       // Usage recording must never block exit handling.
     }
   }
-
-  const job = await prisma.generationJob.findUnique({
-    where: { id: jobId },
-    select: { id: true, status: true },
-  });
 
   if (!job) {
     return NextResponse.json({ error: "Job not found." }, { status: 404 });

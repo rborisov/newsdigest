@@ -6,7 +6,8 @@ import {
   type Topic,
 } from "@prisma/client";
 
-import { spawnAgent as defaultSpawnAgent } from "./cursor";
+import { spawnAgentBackend as defaultSpawnAgent } from "./agent-backend";
+import { spawnAgent as legacySpawnAgent } from "./cursor";
 import type { StoryFingerprint } from "./dedup";
 import { normalizeStoryFingerprints } from "./dedup";
 import { releaseAgentMutexBestEffort } from "./agent-mutex";
@@ -18,7 +19,7 @@ export type PipelineDeps = {
   prisma?: PrismaClient;
   now?: Date;
   spawnedBy?: string;
-  spawnAgent?: typeof defaultSpawnAgent;
+  spawnAgent?: typeof legacySpawnAgent;
 };
 
 function db(deps: PipelineDeps): PrismaClient {

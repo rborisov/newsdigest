@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { tryAcquireAgentMutex } from "@/lib/agent-mutex";
-import { spawnAgent } from "@/lib/cursor";
+import { spawnAgentBackend } from "@/lib/agent-backend";
 import {
   applyReviewPromptPlaceholders,
   buildStoryReviewAgentPrompt,
@@ -96,7 +96,7 @@ export async function startStoryReview(
     date,
   });
 
-  const spawned = spawnAgent(agentPrompt, review.id);
+  const spawned = spawnAgentBackend(agentPrompt, review.id);
   if (!spawned.ok) {
     mutex.release();
     await prisma.storyReview.update({

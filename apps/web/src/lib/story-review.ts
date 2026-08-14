@@ -16,6 +16,7 @@ Instructions:
 - Note uncertainty or conflicting claims when relevant.
 - Do not invent quotes or facts not supported by sources.
 - End with one source link labeled Источник pointing at the original story URL (the portal rewrites it to the digest topic on Telegra.ph when publishing).
+- Do not use HTML tables; use bullet lists or labeled paragraphs for comparisons (any tables are converted to lists at publish time).
 
 When the review is ready, publish via publish_story_review MCP with a clear title and HTML body (headings, paragraphs, links).
 Do not finish until publish_story_review returns a Telegra.ph URL.`;

@@ -408,6 +408,8 @@ INTERNAL_API_KEY=${INTERNAL_API_KEY}
 
 CURSOR_API_KEY=${CURSOR_API_KEY}
 CURSOR_CLI_PATH=/usr/local/bin/agent
+# cursor (default) | burst_gpu (Phase 3+ — not implemented yet)
+AGENT_BACKEND=cursor
 AGENT_WORKSPACE=${WORKSPACE_DIR}
 AGENT_MUTEX_PATH=/var/lock/cursor-agent.lock
 

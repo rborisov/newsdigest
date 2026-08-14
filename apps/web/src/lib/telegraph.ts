@@ -9,6 +9,7 @@ import {
   prepareBoardHtmlWithIllustrations,
   stripIllustrationsForTelegraph,
 } from "./topic-illustrations";
+import { convertTablesForTelegraph } from "./telegraph-tables";
 import { resolveStoryIds, stampStoryIdsInHtml } from "./story-ids";
 
 export const INDEX_SOFT_LIMIT_BYTES = 55_000;
@@ -252,7 +253,7 @@ export function wrapOrphanTextNodes(nodes: TelegraphNode[]): TelegraphNode[] {
 }
 
 export function htmlToTelegraphNodes(html: string): TelegraphNode[] {
-  const trimmed = html.trim();
+  const trimmed = convertTablesForTelegraph(html).trim();
   if (!trimmed) {
     return [];
   }

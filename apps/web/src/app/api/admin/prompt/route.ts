@@ -74,9 +74,9 @@ export async function PATCH(request: Request) {
   }
 
   if (body.boardStaleDays !== undefined) {
-    if (!Number.isInteger(body.boardStaleDays) || body.boardStaleDays < 1 || body.boardStaleDays > 14) {
+    if (!Number.isInteger(body.boardStaleDays) || body.boardStaleDays < 0 || body.boardStaleDays > 365) {
       return NextResponse.json(
-        { error: "Board stale days must be an integer between 1 and 14." },
+        { error: "Board stale days must be an integer between 0 and 365 (0 = no limit)." },
         { status: 400 },
       );
     }

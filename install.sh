@@ -652,6 +652,13 @@ install_app() {
   npm run db:push --workspace=web
   npm run db:seed --workspace=web
 
+  # Legacy default (1 day) hid weekly cached topics on the home board.
+  if command -v sqlite3 >/dev/null && [[ -f "${INSTALL_ROOT}/data/newsdigest.db" ]]; then
+    sqlite3 "${INSTALL_ROOT}/data/newsdigest.db" \
+      "UPDATE PromptConfig SET boardStaleDays = 0 WHERE id = 'default' AND boardStaleDays = 1;" \
+      2>/dev/null || true
+  fi
+
   local need_build=0
   if [[ ! -f apps/web/.next/standalone/apps/web/server.js ]] \
     || [[ ! -d apps/worker/dist ]] \

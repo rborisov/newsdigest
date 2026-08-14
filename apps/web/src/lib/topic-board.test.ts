@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { selectBoardPages } from "./topic-board";
+import { boardToNavItems, selectBoardPages } from "./topic-board";
 
 describe("selectBoardPages", () => {
   const topics = [
@@ -33,5 +33,50 @@ describe("selectBoardPages", () => {
       now,
     );
     assert.equal(board.length, 0);
+  });
+
+  it("keeps cached topics of any age when staleDays is 0", () => {
+    const board = selectBoardPages(
+      [
+        { id: "p0", topicId: "t1", topicName: "AI", title: "Weekly", telegraphUrl: "u", publishedAt: new Date("2026-07-01T12:00:00Z"), storyTitles: ["s"], htmlContent: "<p>cached</p>" },
+        { id: "p2", topicId: "t2", topicName: "Ops", title: "O", telegraphUrl: "u2", publishedAt: new Date("2026-07-20T09:00:00Z"), storyTitles: [], htmlContent: "<p>ops</p>" },
+      ],
+      topics,
+      0,
+      now,
+    );
+    assert.equal(board.length, 2);
+    assert.equal(board[0]?.pageId, "p0");
+    assert.equal(board[1]?.pageId, "p2");
+  });
+});
+
+describe("boardToNavItems", () => {
+  it("sorts cached topics by publishedAt descending", () => {
+    const nav = boardToNavItems([
+      {
+        topicId: "t1",
+        topicName: "AI",
+        pageId: "p1",
+        title: "A",
+        telegraphUrl: "u1",
+        publishedAt: new Date("2026-07-01T12:00:00Z"),
+        storyTitles: [],
+        htmlContent: "",
+      },
+      {
+        topicId: "t2",
+        topicName: "Ops",
+        pageId: "p2",
+        title: "O",
+        telegraphUrl: "u2",
+        publishedAt: new Date("2026-07-28T09:00:00Z"),
+        storyTitles: [],
+        htmlContent: "",
+      },
+    ]);
+    assert.equal(nav.length, 2);
+    assert.equal(nav[0]?.topicName, "Ops");
+    assert.equal(nav[1]?.topicName, "AI");
   });
 });

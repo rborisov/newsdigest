@@ -50,7 +50,7 @@ async function main() {
       id: "default",
       template: DEFAULT_PROMPT_TEMPLATE,
       periodHours: 24,
-      boardStaleDays: 1,
+      boardStaleDays: 0,
       displayTimezone: "UTC",
       language: "English",
     },

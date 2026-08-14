@@ -617,11 +617,11 @@ function PromptSection({ initialPrompt }: { initialPrompt: PromptConfigRow }) {
             </span>
           </label>
           <label style={fieldStyle}>
-            Board stale days
+            Board stale days (0 = show all cached topics)
             <input
               type="number"
-              min={1}
-              max={14}
+              min={0}
+              max={365}
               required
               value={boardStaleDays}
               onChange={(event) => setBoardStaleDays(event.target.value)}

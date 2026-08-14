@@ -13,6 +13,7 @@ export type BoardCard = {
 
 export type SidebarItem = {
   id: string;
+  topicId: string;
   topicName: string;
   title: string;
   telegraphUrl: string;
@@ -47,7 +48,8 @@ function pageMatchesTopic(page: BoardPageInput, topic: TopicInput): boolean {
 
 export async function getBoardStaleDays(prisma: PrismaClient): Promise<number> {
   const config = await prisma.promptConfig.findUnique({ where: { id: "default" } });
-  return config?.boardStaleDays ?? 1;
+  // 0 = show latest cached page for every topic (no age limit).
+  return config?.boardStaleDays ?? 0;
 }
 
 export function selectBoardPages(
@@ -56,23 +58,25 @@ export function selectBoardPages(
   staleDays: number,
   now: Date,
 ): BoardCard[] {
-  const cutoff = boardCutoff(staleDays, now);
+  const cutoff = staleDays > 0 ? boardCutoff(staleDays, now) : null;
   const sortedTopics = [...topics].sort(
     (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
   );
 
   const board: BoardCard[] = [];
   for (const topic of sortedTopics) {
-    const inWindow = pages.filter(
-      (page) => pageMatchesTopic(page, topic) && page.publishedAt >= cutoff,
-    );
-    if (inWindow.length === 0) {
+    const matching = pages.filter((page) => pageMatchesTopic(page, topic));
+    if (matching.length === 0) {
       continue;
     }
 
-    const latest = inWindow.reduce((newest, page) =>
+    const latest = matching.reduce((newest, page) =>
       page.publishedAt > newest.publishedAt ? page : newest,
     );
+
+    if (cutoff && latest.publishedAt < cutoff) {
+      continue;
+    }
 
     board.push({
       topicId: topic.id,
@@ -87,6 +91,21 @@ export function selectBoardPages(
   }
 
   return board;
+}
+
+/** Latest cached page per topic, newest update first (for home sidebar). */
+export function boardToNavItems(board: BoardCard[]): SidebarItem[] {
+  return [...board]
+    .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+    .map((card) => ({
+      id: card.pageId,
+      topicId: card.topicId,
+      topicName: card.topicName,
+      title: card.title,
+      telegraphUrl: card.telegraphUrl,
+      publishedAt: card.publishedAt,
+      storyTitles: card.storyTitles,
+    }));
 }
 
 export async function loadRecentDigests(
@@ -104,6 +123,7 @@ export async function loadRecentDigests(
       take,
       select: {
         id: true,
+        topicId: true,
         topicName: true,
         title: true,
         telegraphUrl: true,
@@ -124,6 +144,7 @@ export async function loadRecentDigests(
   return {
     items: pages.map((page) => ({
       id: page.id,
+      topicId: page.topicId ?? page.id,
       topicName: page.topicName,
       title: page.title,
       telegraphUrl: page.telegraphUrl,
@@ -135,50 +156,34 @@ export async function loadRecentDigests(
   };
 }
 
-export async function loadTopicBoard(
-  prisma: PrismaClient,
-  now = new Date(),
-): Promise<{
-  board: BoardCard[];
-  indexUrl: string;
-  displayTimezone: string;
-}> {
-  const staleDays = await getBoardStaleDays(prisma);
-  const cutoff = boardCutoff(staleDays, now);
+const boardPageSelect = {
+  id: true,
+  topicId: true,
+  topicName: true,
+  title: true,
+  telegraphUrl: true,
+  publishedAt: true,
+  htmlContent: true,
+  stories: {
+    take: 6,
+    orderBy: { firstSeenAt: "asc" as const },
+    select: { title: true },
+  },
+} as const;
 
-  const pageSelect = {
-    id: true,
-    topicId: true,
-    topicName: true,
-    title: true,
-    telegraphUrl: true,
-    publishedAt: true,
-    htmlContent: true,
-    stories: {
-      take: 6,
-      orderBy: { firstSeenAt: "asc" as const },
-      select: { title: true },
-    },
-  };
+type BoardPageRow = {
+  id: string;
+  topicId: string | null;
+  topicName: string;
+  title: string;
+  telegraphUrl: string;
+  publishedAt: Date;
+  htmlContent: string;
+  stories: { title: string }[];
+};
 
-  const [meta, topics, boardPages, promptConfig] = await Promise.all([
-    prisma.telegraphMeta.findUnique({ where: { id: "default" } }),
-    prisma.topic.findMany({
-      where: { enabled: true },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, sortOrder: true },
-    }),
-    prisma.topicPage.findMany({
-      where: { publishedAt: { gte: cutoff } },
-      select: pageSelect,
-    }),
-    prisma.promptConfig.findUnique({
-      where: { id: "default" },
-      select: { displayTimezone: true },
-    }),
-  ]);
-
-  const toPageInput = (page: (typeof boardPages)[number]): BoardPageInput => ({
+function toPageInput(page: BoardPageRow): BoardPageInput {
+  return {
     id: page.id,
     topicId: page.topicId,
     topicName: page.topicName,
@@ -187,10 +192,52 @@ export async function loadTopicBoard(
     publishedAt: page.publishedAt,
     storyTitles: page.stories.map((story) => story.title),
     htmlContent: page.htmlContent,
+  };
+}
+
+async function loadLatestPageForTopic(
+  prisma: PrismaClient,
+  topic: TopicInput,
+): Promise<BoardPageRow | null> {
+  return prisma.topicPage.findFirst({
+    where: {
+      OR: [{ topicId: topic.id }, { topicId: null, topicName: topic.name }],
+    },
+    orderBy: { publishedAt: "desc" },
+    select: boardPageSelect,
   });
+}
+
+export async function loadTopicBoard(
+  prisma: PrismaClient,
+  now = new Date(),
+): Promise<{
+  board: BoardCard[];
+  nav: SidebarItem[];
+  indexUrl: string;
+  displayTimezone: string;
+}> {
+  const staleDays = await getBoardStaleDays(prisma);
+
+  const [meta, topics, promptConfig] = await Promise.all([
+    prisma.telegraphMeta.findUnique({ where: { id: "default" } }),
+    prisma.topic.findMany({
+      where: { enabled: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, sortOrder: true },
+    }),
+    prisma.promptConfig.findUnique({
+      where: { id: "default" },
+      select: { displayTimezone: true },
+    }),
+  ]);
+
+  const latestPages = (
+    await Promise.all(topics.map((topic) => loadLatestPageForTopic(prisma, topic)))
+  ).filter((page): page is BoardPageRow => page !== null);
 
   const board = selectBoardPages(
-    boardPages.map(toPageInput),
+    latestPages.map(toPageInput),
     topics,
     staleDays,
     now,
@@ -198,6 +245,7 @@ export async function loadTopicBoard(
 
   return {
     board,
+    nav: boardToNavItems(board),
     indexUrl: meta?.currentIndexUrl?.trim() ?? "",
     displayTimezone: promptConfig?.displayTimezone?.trim() || "UTC",
   };

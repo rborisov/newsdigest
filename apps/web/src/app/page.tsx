@@ -5,10 +5,11 @@ import { SiteFooter } from "@/app/site-footer";
 import { SiteHeader } from "@/app/site-header";
 import { siteFooterLinks } from "@/lib/about-page";
 import { auth } from "@/lib/auth";
-import { digestListTags, formatDigestWhen } from "@/lib/digest-display";
+import { formatDigestWhen } from "@/lib/digest-display";
 import { prisma } from "@/lib/db";
 import { layoutBoardStoryBlocks } from "@/lib/topic-illustrations";
 import { sanitizeDigestHtml, stripLeadingTopicHeading } from "@/lib/sanitize-digest-html";
+import { HomeTopicsNav } from "@/app/home-topics-nav";
 import { loadTopicBoard } from "@/lib/topic-board";
 
 export default async function HomePage() {
@@ -54,52 +55,7 @@ export default async function HomePage() {
         </div>
       </header>
 
-      <aside className="home-sidebar" aria-label="Cached topics">
-        <div className="home-sidebar-inner">
-          <h2 className="home-sidebar-title">Topics</h2>
-          {indexUrl ? (
-            <a
-              className="index-link index-link-sidebar"
-              href={indexUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Telegra.ph index →
-            </a>
-          ) : null}
-          {nav.length === 0 ? (
-            <p className="muted">No cached topics yet.</p>
-          ) : (
-            <ul className="topic-nav">
-              {nav.map((item) => {
-                const tags = digestListTags({
-                  title: item.title,
-                  storyTitles: item.storyTitles,
-                });
-                return (
-                  <li key={item.topicId}>
-                    <a className="topic-nav-item" href={`#topic-${item.topicId}`}>
-                      <span className="digest-time">
-                        {formatDigestWhen(item.publishedAt, displayTimezone)}
-                      </span>
-                      <span className="topic-nav-name">{item.topicName}</span>
-                      {tags.length > 0 ? (
-                        <span className="tag-row">
-                          {tags.slice(0, 3).map((tag) => (
-                            <span key={tag} className="tag">
-                              {tag}
-                            </span>
-                          ))}
-                        </span>
-                      ) : null}
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </aside>
+      <HomeTopicsNav nav={nav} indexUrl={indexUrl} displayTimezone={displayTimezone} />
 
       <div className="home-main">
         <section className="home-board panel">

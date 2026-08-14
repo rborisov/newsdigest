@@ -89,15 +89,17 @@ model PromptConfig {
 }
 
 model TelegraphMeta {
-  id               String    @id @default("default")
-  accessToken      String    @default("")
-  currentIndexPath String    @default("")
-  currentIndexUrl  String    @default("")
-  authorName       String    @default("")
-  authorUrl        String    @default("")
+  id                    String    @id @default("default")
+  accessToken           String    @default("")
+  currentIndexPath      String    @default("")
+  currentIndexUrl       String    @default("")
+  currentReviewIndexPath String   @default("")
+  currentReviewIndexUrl  String   @default("")
+  authorName            String    @default("")
+  authorUrl             String    @default("")
   /// Exclusive lock expiry for serializing index updates (null = unlocked).
-  indexLockUntil   DateTime?
-  updatedAt        DateTime  @updatedAt
+  indexLockUntil        DateTime?
+  updatedAt             DateTime  @updatedAt
 }
 
 model TelegraphIndexPage {
@@ -113,6 +115,21 @@ model TelegraphIndexPage {
   nextIndexes   TelegraphIndexPage[] @relation("IndexChain")
   publishedPages PublishedPage[]
   topicPages    TopicPage[]
+}
+
+/// Telegra.ph index listing published story reviews (newest first).
+model TelegraphReviewIndexPage {
+  id              String    @id @default(cuid())
+  telegraphPath   String
+  telegraphUrl    String
+  previousIndexId String?
+  isCurrent       Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  closedAt        DateTime?
+
+  previousIndex TelegraphReviewIndexPage?  @relation("ReviewIndexChain", fields: [previousIndexId], references: [id])
+  nextIndexes   TelegraphReviewIndexPage[] @relation("ReviewIndexChain")
+  reviews       StoryReview[]
 }
 
 model GenerationJob {
@@ -244,11 +261,14 @@ model StoryReview {
   publishedAt   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  reviewIndexPageId String?
 
-  story StoryIndex @relation(fields: [storyIndexId], references: [id], onDelete: Cascade)
+  story           StoryIndex              @relation(fields: [storyIndexId], references: [id], onDelete: Cascade)
+  reviewIndexPage TelegraphReviewIndexPage? @relation(fields: [reviewIndexPageId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([publishedAt])
+  @@index([reviewIndexPageId])
 }
 
 model AllowedUser {

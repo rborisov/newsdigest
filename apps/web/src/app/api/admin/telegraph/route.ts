@@ -24,6 +24,8 @@ export async function GET() {
       authorUrl: telegraph.authorUrl,
       currentIndexPath: telegraph.currentIndexPath,
       currentIndexUrl: telegraph.currentIndexUrl,
+      currentReviewIndexPath: telegraph.currentReviewIndexPath,
+      currentReviewIndexUrl: telegraph.currentReviewIndexUrl,
       updatedAt: telegraph.updatedAt,
     },
   });
@@ -75,6 +77,8 @@ export async function PATCH(request: Request) {
       authorUrl: telegraph.authorUrl,
       currentIndexPath: telegraph.currentIndexPath,
       currentIndexUrl: telegraph.currentIndexUrl,
+      currentReviewIndexPath: telegraph.currentReviewIndexPath,
+      currentReviewIndexUrl: telegraph.currentReviewIndexUrl,
       updatedAt: telegraph.updatedAt,
     },
   });

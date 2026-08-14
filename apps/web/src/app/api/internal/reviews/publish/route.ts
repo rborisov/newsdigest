@@ -4,6 +4,8 @@ import { z } from "zod";
 import { releaseAgentMutexBestEffort } from "@/lib/agent-mutex";
 import { prisma } from "@/lib/db";
 import { requireInternalApi } from "@/lib/require-internal";
+import { updateReviewIndexAfterPublish } from "@/lib/review-index";
+import { rewriteReviewDigestSourceLink } from "@/lib/story-review";
 import { createPage } from "@/lib/telegraph";
 import { stripIllustrationsForTelegraph } from "@/lib/topic-illustrations";
 
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
     include: {
       story: {
         include: {
-          topicPage: { select: { topicName: true } },
+          topicPage: { select: { topicName: true, telegraphUrl: true } },
         },
       },
     },
@@ -68,7 +70,20 @@ export async function POST(request: Request) {
   try {
     const meta = await prisma.telegraphMeta.findUnique({ where: { id: "default" } });
     const accessToken = await resolveAccessToken();
-    const telegraphHtml = stripIllustrationsForTelegraph(htmlContent);
+    const digestTelegraphUrl = review.story.topicPage.telegraphUrl.trim();
+    if (!digestTelegraphUrl) {
+      return NextResponse.json(
+        { error: "Digest topic Telegra.ph URL is missing for this story." },
+        { status: 409 },
+      );
+    }
+
+    const telegraphHtml = stripIllustrationsForTelegraph(
+      rewriteReviewDigestSourceLink(htmlContent, {
+        digestTelegraphUrl,
+        storyCanonicalUrl: review.story.canonicalUrl,
+      }),
+    );
 
     let page: Awaited<ReturnType<typeof createPage>>;
     if (review.telegraphPath) {
@@ -103,6 +118,30 @@ export async function POST(request: Request) {
       },
     });
 
+    let reviewIndexUrl = "";
+    let reviewIndexPath = "";
+    try {
+      const index = await updateReviewIndexAfterPublish({
+        reviewPage: {
+          id: updated.id,
+          title: updated.title,
+          telegraphUrl: page.url,
+          telegraphPath: page.path,
+          publishedAt: updated.publishedAt!,
+          storyTitle: review.story.title,
+          topicName: review.story.topicPage.topicName,
+        },
+      });
+      reviewIndexUrl = index.indexUrl;
+      reviewIndexPath = index.indexPath;
+    } catch (indexError) {
+      const message = indexError instanceof Error ? indexError.message : "Review index update failed";
+      await prisma.storyReview.update({
+        where: { id: reviewId },
+        data: { error: message },
+      });
+    }
+
     releaseAgentMutexBestEffort();
 
     return NextResponse.json({
@@ -111,6 +150,8 @@ export async function POST(request: Request) {
       storyIndexId: updated.storyIndexId,
       reviewUrl: page.url,
       reviewPath: page.path,
+      reviewIndexUrl,
+      reviewIndexPath,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Publish failed";

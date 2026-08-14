@@ -108,6 +108,7 @@ export function siteFooterLinks(
 ): { href: string; label: string }[] {
   return [
     { href: "/digests", label: "Recent digests" },
+    { href: "/reviews", label: "Recent reviews" },
     ...(page ? aboutFooterLinks(page) : []),
   ];
 }

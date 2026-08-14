@@ -14,6 +14,8 @@ import { loadTopicBoard } from "@/lib/topic-board";
 import { loadStoryReviewsForHtml } from "@/lib/load-story-reviews";
 import { enrichBoardHtmlWithReviewLinks } from "@/lib/story-review";
 
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
   const [session, { board, nav, indexUrl, displayTimezone }, about] = await Promise.all([
     auth(),

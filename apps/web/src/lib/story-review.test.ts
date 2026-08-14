@@ -5,6 +5,7 @@ import {
   applyReviewPromptPlaceholders,
   enrichBoardHtmlWithReviewLinks,
   extractStoryIdsFromHtml,
+  rewriteReviewDigestSourceLink,
 } from "./story-review";
 
 describe("story-review", () => {
@@ -49,11 +50,56 @@ describe("story-review", () => {
     const enriched = enrichBoardHtmlWithReviewLinks(html, map, { isAdmin: false });
     assert.match(enriched, /Review →/);
     assert.match(enriched, /telegra\.ph/);
+    assert.doesNotMatch(enriched, /cpub0000000000000000001/);
+  });
+
+  it("hides in-progress reviews from regular users", () => {
+    const html = "<p>Story · crun000000000000000000001</p>";
+    const map = new Map([
+      [
+        "crun000000000000000000001",
+        {
+          storyIndexId: "crun000000000000000000001",
+          status: "running",
+          telegraphUrl: "",
+        },
+      ],
+    ]);
+    const enriched = enrichBoardHtmlWithReviewLinks(html, map, { isAdmin: false });
+    assert.equal(enriched, "<p>Story</p>");
+    assert.doesNotMatch(enriched, /Review/);
+  });
+
+  it("strips story ids for regular users when no published review", () => {
+    const html = "<p>Story · cnew0000000000000000000001</p>";
+    const enriched = enrichBoardHtmlWithReviewLinks(html, new Map(), { isAdmin: false });
+    assert.equal(enriched, "<p>Story</p>");
   });
 
   it("adds admin start link when no review", () => {
     const html = "<p>Story · cnew0000000000000000000001</p>";
     const enriched = enrichBoardHtmlWithReviewLinks(html, new Map(), { isAdmin: true });
     assert.match(enriched, /\/admin\/reviews\/start\?storyId=cnew/);
+  });
+
+  it("rewrites Источник link to digest topic on Telegra.ph", () => {
+    const html =
+      '<p>Summary.</p><p><a href="https://news.test/story?utm_source=x">Источник</a></p>';
+    const out = rewriteReviewDigestSourceLink(html, {
+      digestTelegraphUrl: "https://telegra.ph/Digest-Topic-08-14",
+      storyCanonicalUrl: "https://news.test/story",
+    });
+    assert.match(out, /href="https:\/\/telegra\.ph\/Digest-Topic-08-14"/);
+    assert.match(out, />Источник</);
+    assert.doesNotMatch(out, /news\.test/);
+  });
+
+  it("rewrites anchors that still point at the story canonical URL", () => {
+    const html = '<p><a href="https://news.test/story">news.test</a></p>';
+    const out = rewriteReviewDigestSourceLink(html, {
+      digestTelegraphUrl: "https://telegra.ph/Digest-Topic-08-14",
+      storyCanonicalUrl: "https://news.test/story?utm_source=x",
+    });
+    assert.match(out, /telegra\.ph\/Digest-Topic-08-14/);
   });
 });

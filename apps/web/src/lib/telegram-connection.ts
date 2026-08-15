@@ -320,7 +320,7 @@ export async function startTelegramLink(
   const cfg = await resolveTelegramApiConfigAsync();
   if (!cfg) {
     throw new Error(
-      "Telegram API id/hash are not configured. Save them in Admin → Connections (from https://my.telegram.org).",
+      "Telegram API id/hash are not configured. Save them in Admin → API keys (from https://my.telegram.org).",
     );
   }
   const existing = await prisma.socialConnection.findUnique({ where: { provider: TELEGRAM_PROVIDER } });
@@ -379,7 +379,7 @@ export async function startTelegramLink(
 export async function submitTelegramCode(codeRaw: string): Promise<PublicSocialConnection> {
   const cfg = await resolveTelegramApiConfigAsync();
   if (!cfg) {
-    throw new Error("Telegram API id/hash are not configured. Save them in Admin → Connections.");
+    throw new Error("Telegram API id/hash are not configured. Save them in Admin → API keys.");
   }
   const code = codeRaw.trim().replace(/\s+/g, "");
   if (!code) {
@@ -450,7 +450,7 @@ export async function submitTelegramCode(codeRaw: string): Promise<PublicSocialC
 export async function submitTelegramPassword(passwordRaw: string): Promise<PublicSocialConnection> {
   const cfg = await resolveTelegramApiConfigAsync();
   if (!cfg) {
-    throw new Error("Telegram API id/hash are not configured. Save them in Admin → Connections.");
+    throw new Error("Telegram API id/hash are not configured. Save them in Admin → API keys.");
   }
   const password = passwordRaw; // do not trim aggressively; passwords may have spaces
   if (!password) {

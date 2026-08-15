@@ -1997,9 +1997,17 @@ function AboutSection({ initialAbout }: { initialAbout: AboutPageRow }) {
 function KeysSection({
   initialTelegraph,
   cursorApiKeyConfigured,
+  initialConnection,
+  telegramApiConfigured,
+  initialTelegramApiId,
+  active,
 }: {
   initialTelegraph: TelegraphMetaRow;
   cursorApiKeyConfigured: boolean;
+  initialConnection: SocialConnectionRow;
+  telegramApiConfigured: boolean;
+  initialTelegramApiId: number | null;
+  active: boolean;
 }) {
   const router = useRouter();
   const [accessToken, setAccessToken] = useState("");
@@ -2094,6 +2102,15 @@ function KeysSection({
       </form>
 
       <StatusMessage message={message} error={error} />
+
+      <div style={{ marginTop: "2.5rem", borderTop: "1px solid #ddd", paddingTop: "1.5rem" }}>
+        <TelegramConnectionPanel
+          active={active}
+          initialConnection={initialConnection}
+          telegramApiConfigured={telegramApiConfigured}
+          initialTelegramApiId={initialTelegramApiId}
+        />
+      </div>
     </section>
   );
 }
@@ -2387,7 +2404,7 @@ function SystemSection() {
   );
 }
 
-function ConnectionsSection({
+function TelegramConnectionPanel({
   initialConnection,
   telegramApiConfigured,
   initialTelegramApiId,
@@ -2499,17 +2516,15 @@ function ConnectionsSection({
   const canStartOver = !linked && (linking || errored);
 
   return (
-    <section style={sectionStyle}>
-      <h2 style={headingStyle}>Connections</h2>
+    <div>
+      <h3 style={{ ...headingStyle, marginBottom: "0.5rem" }}>Telegram account</h3>
       <p style={{ color: "#555", marginTop: 0, maxWidth: "40rem" }}>
-        Link messaging accounts used for multi-source topics (DD-0005). Sessions and API hash are encrypted
-        at rest; never paste them into agent prompts.
+        Link a Telegram user session for multi-source topics (DD-0005). Sessions and API hash are encrypted at
+        rest; never paste them into agent prompts.
       </p>
 
       <div
         style={{
-          borderTop: "1px solid #ddd",
-          paddingTop: "1rem",
           display: "flex",
           flexDirection: "column",
           gap: "0.75rem",
@@ -2698,7 +2713,7 @@ function ConnectionsSection({
         </div>
         <StatusMessage message={message} error={error} />
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -2709,7 +2724,6 @@ const ADMIN_TABS = [
   { id: "topics", label: "Topics" },
   { id: "schedules", label: "Schedules" },
   { id: "about", label: "About" },
-  { id: "connections", label: "Connections" },
   { id: "system", label: "System" },
   { id: "keys", label: "API keys" },
 ] as const;
@@ -2725,12 +2739,15 @@ function resolveAdminTabHash(raw: string): AdminTabId | null {
   if (raw === "content") {
     return "prompt";
   }
+  if (raw === "connections") {
+    return "keys";
+  }
   return isAdminTabId(raw) ? raw : null;
 }
 
 export function AdminClient({ data }: { data: AdminInitialData }) {
   const [tab, setTab] = useState<AdminTabId>("jobs");
-  const [connectionsVisited, setConnectionsVisited] = useState(false);
+  const [keysVisited, setKeysVisited] = useState(false);
   const topicsLeaveGuardRef = useRef<(() => Promise<boolean>) | null>(null);
 
   useEffect(() => {
@@ -2738,8 +2755,8 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
     const resolved = resolveAdminTabHash(fromHash);
     if (resolved) {
       setTab(resolved);
-      if (resolved === "connections") {
-        setConnectionsVisited(true);
+      if (resolved === "keys") {
+        setKeysVisited(true);
       }
     }
   }, []);
@@ -2751,8 +2768,8 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
         return;
       }
     }
-    if (next === "connections") {
-      setConnectionsVisited(true);
+    if (next === "keys") {
+      setKeysVisited(true);
     }
     setTab(next);
     window.history.replaceState(null, "", `#${next}`);
@@ -2783,7 +2800,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
 
       <section className="hero" style={{ marginBottom: "1.25rem" }}>
         <h1 style={{ maxWidth: "none", fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>Admin</h1>
-        <p>Jobs, people, prompt, topics, schedules, connections, system, and API keys.</p>
+        <p>Jobs, people, prompt, topics, schedules, system, and API keys.</p>
       </section>
 
       <nav
@@ -2821,22 +2838,18 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
       ) : null}
       {tab === "schedules" ? <SchedulesSection initialSchedules={data.schedules} /> : null}
       {tab === "about" ? <AboutSection initialAbout={data.about} /> : null}
-      {connectionsVisited ? (
-        <div style={{ display: tab === "connections" ? "block" : "none" }} hidden={tab !== "connections"}>
-          <ConnectionsSection
-            active={tab === "connections"}
+      {tab === "system" ? <SystemSection /> : null}
+      {keysVisited ? (
+        <div style={{ display: tab === "keys" ? "block" : "none" }} hidden={tab !== "keys"}>
+          <KeysSection
+            active={tab === "keys"}
+            initialTelegraph={data.telegraph}
+            cursorApiKeyConfigured={data.cursorApiKeyConfigured}
             initialConnection={data.telegramConnection}
             telegramApiConfigured={data.telegramApiConfigured}
             initialTelegramApiId={data.telegramApiId}
           />
         </div>
-      ) : null}
-      {tab === "system" ? <SystemSection /> : null}
-      {tab === "keys" ? (
-        <KeysSection
-          initialTelegraph={data.telegraph}
-          cursorApiKeyConfigured={data.cursorApiKeyConfigured}
-        />
       ) : null}
     </main>
   );

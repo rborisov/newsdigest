@@ -408,7 +408,7 @@ prompt_config() {
 
   prompt_secret TELEGRAPH_ACCESS_TOKEN "Telegra.ph access token (optional)" "${TELEGRAPH_ACCESS_TOKEN}"
 
-  prompt TELEGRAM_API_ID "Telegram API id from my.telegram.org (optional, for Connections)" "${TELEGRAM_API_ID}"
+  prompt TELEGRAM_API_ID "Telegram API id from my.telegram.org (optional, for Admin API keys)" "${TELEGRAM_API_ID}"
   prompt_secret TELEGRAM_API_HASH "Telegram API hash (optional)" "${TELEGRAM_API_HASH}"
 
   if [[ -z "${NEXTAUTH_SECRET}" ]]; then
@@ -458,7 +458,7 @@ AGENT_MUTEX_PATH=/var/lock/cursor-agent.lock
 
 TELEGRAPH_ACCESS_TOKEN=${TELEGRAPH_ACCESS_TOKEN}
 
-# Telegram user session for Admin → Connections (https://my.telegram.org)
+# Telegram user session for Admin → API keys (https://my.telegram.org)
 TELEGRAM_API_ID=${TELEGRAM_API_ID}
 TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
 CONNECTIONS_SECRET=${CONNECTIONS_SECRET}

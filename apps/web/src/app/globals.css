@@ -99,17 +99,17 @@ select {
 .home-sidebar {
   grid-area: sidebar;
   position: sticky;
-  top: 0;
+  top: 1.35rem;
   align-self: start;
-  height: 100vh;
-  overflow: hidden;
+  height: auto;
+  overflow: visible;
   border-right: 1px solid var(--line);
   background: transparent;
 }
 
 .home-sidebar-inner {
-  height: 100%;
-  overflow-y: auto;
+  height: auto;
+  overflow: visible;
   padding: 1.35rem 1rem 2rem 1.25rem;
 }
 
@@ -148,6 +148,11 @@ select {
 
 .home-sidebar-board .tag-row {
   margin-top: 0;
+}
+
+.topic-nav-footnote {
+  margin-top: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .home-main {
@@ -726,8 +731,9 @@ form:has(> .nav-link) {
     inset: 0 auto 0 0;
     z-index: 36;
     width: min(19rem, 88vw);
-    height: 100vh;
-    max-height: none;
+    height: auto;
+    max-height: 100vh;
+    overflow: visible;
     border-right: 1px solid var(--line);
     border-top: 0;
     transform: translateX(-105%);
@@ -740,8 +746,9 @@ form:has(> .nav-link) {
   }
 
   .home-sidebar-inner {
-    height: 100%;
-    max-height: none;
+    height: auto;
+    max-height: 100vh;
+    overflow: visible;
     padding: 1.1rem 1rem 2rem;
   }
 

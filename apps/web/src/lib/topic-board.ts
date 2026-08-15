@@ -98,10 +98,17 @@ export function selectBoardPages(
   );
 }
 
+/** Max topics in the home sidebar (newest first). Keeps the rail short — no own scrollbar. */
+export const HOME_SIDEBAR_TOPIC_LIMIT = 8;
+
 /** Latest cached page per topic, newest update first (for home sidebar). */
-export function boardToNavItems(board: BoardCard[]): SidebarItem[] {
+export function boardToNavItems(
+  board: BoardCard[],
+  limit = HOME_SIDEBAR_TOPIC_LIMIT,
+): SidebarItem[] {
   return [...board]
     .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+    .slice(0, Math.max(0, limit))
     .map((card) => ({
       id: card.pageId,
       topicId: card.topicId,

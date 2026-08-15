@@ -112,4 +112,21 @@ describe("boardToNavItems", () => {
     assert.equal(nav[0]?.topicName, "Ops");
     assert.equal(nav[1]?.topicName, "AI");
   });
+
+  it("limits sidebar topics to the newest N", () => {
+    const board = Array.from({ length: 12 }, (_, i) => ({
+      topicId: `t${i}`,
+      topicName: `Topic ${i}`,
+      pageId: `p${i}`,
+      title: `T${i}`,
+      telegraphUrl: `u${i}`,
+      publishedAt: new Date(`2026-07-${String(i + 1).padStart(2, "0")}T12:00:00Z`),
+      storyTitles: [] as string[],
+      htmlContent: "",
+    }));
+    const nav = boardToNavItems(board, 8);
+    assert.equal(nav.length, 8);
+    assert.equal(nav[0]?.topicName, "Topic 11");
+    assert.equal(nav[7]?.topicName, "Topic 4");
+  });
 });

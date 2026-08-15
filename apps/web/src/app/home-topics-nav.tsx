@@ -95,42 +95,45 @@ export function HomeTopicsNav({ nav, indexUrl, displayTimezone }: Props) {
             {nav.length === 0 ? (
               <p className="muted">No cached topics yet.</p>
             ) : (
-              <ul className="board-list topic-nav">
-                {nav.map((item) => {
-                  const tags = digestListTags({
-                    title: item.title,
-                    storyTitles: item.storyTitles,
-                  });
-                  return (
-                    <li key={item.topicId}>
-                      <a
-                        className="board-card topic-nav-item"
-                        href={`#topic-${item.topicId}`}
-                        onClick={close}
-                      >
-                        <div className="board-card-header">
-                          <span className="board-topic topic-nav-name">{item.topicName}</span>
-                          <time
-                            className="digest-time"
-                            dateTime={item.publishedAt.toISOString()}
-                          >
-                            {formatDigestWhen(item.publishedAt, displayTimezone)}
-                          </time>
-                        </div>
-                        {tags.length > 0 ? (
-                          <div className="tag-row">
-                            {tags.slice(0, 3).map((tag) => (
-                              <span key={tag} className="tag">
-                                {tag}
-                              </span>
-                            ))}
+              <>
+                <ul className="board-list topic-nav">
+                  {nav.map((item) => {
+                    const tags = digestListTags({
+                      title: item.title,
+                      storyTitles: item.storyTitles,
+                    });
+                    return (
+                      <li key={item.topicId}>
+                        <a
+                          className="board-card topic-nav-item"
+                          href={`#topic-${item.topicId}`}
+                          onClick={close}
+                        >
+                          <div className="board-card-header">
+                            <span className="board-topic topic-nav-name">{item.topicName}</span>
+                            <time
+                              className="digest-time"
+                              dateTime={item.publishedAt.toISOString()}
+                            >
+                              {formatDigestWhen(item.publishedAt, displayTimezone)}
+                            </time>
                           </div>
-                        ) : null}
-                      </a>
-                    </li>
-                  );
-                })}
-              </ul>
+                          {tags.length > 0 ? (
+                            <div className="tag-row">
+                              {tags.slice(0, 3).map((tag) => (
+                                <span key={tag} className="tag">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="muted topic-nav-footnote">Newest topics · full list below</p>
+              </>
             )}
           </section>
         </div>

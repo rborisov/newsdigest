@@ -4,11 +4,14 @@ import { prisma } from "@/lib/db";
 import { DEFAULT_REVIEW_TEMPLATE } from "@/lib/story-review";
 import { syncScheduleHumanFieldsFromCron } from "@/lib/sync-schedule-human";
 import { getTelegramConnectionPublic } from "@/lib/telegram-connection";
+import { ensureTopicSourcesMigrated } from "@/lib/topic-sources-db";
+import { toPublicTopicSource } from "@/lib/topic-sources";
 
 export default async function AdminPage() {
   const session = await requireAdmin();
 
   await syncScheduleHumanFieldsFromCron();
+  await ensureTopicSourcesMigrated();
 
   const [users, topics, schedules, prompt, telegraph, about, jobs, telegram] = await Promise.all([
     prisma.allowedUser.findMany({
@@ -24,6 +27,19 @@ export default async function AdminPage() {
         enabled: true,
         sortOrder: true,
         scheduleId: true,
+        sources: {
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true,
+            kind: true,
+            enabled: true,
+            sortOrder: true,
+            configJson: true,
+            connectionId: true,
+            lastSyncAt: true,
+            lastError: true,
+          },
+        },
       },
     }),
     prisma.schedule.findMany({
@@ -119,7 +135,15 @@ export default async function AdminPage() {
       data={{
         signedInEmail: session.user.email ?? "",
         users,
-        topics,
+        topics: topics.map((topic) => ({
+          id: topic.id,
+          name: topic.name,
+          keywords: topic.keywords,
+          enabled: topic.enabled,
+          sortOrder: topic.sortOrder,
+          scheduleId: topic.scheduleId,
+          sources: topic.sources.map(toPublicTopicSource),
+        })),
         schedules,
         prompt: {
           ...prompt,

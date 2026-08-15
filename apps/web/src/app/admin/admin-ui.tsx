@@ -15,6 +15,17 @@ type AllowedUserRow = {
   isAdmin: boolean;
 };
 
+type TopicSourceRow = {
+  id: string;
+  kind: "web" | "telegram";
+  enabled: boolean;
+  sortOrder: number;
+  config: { keywords?: string; peers?: string[]; lookbackHours?: number | null };
+  connectionId: string | null;
+  lastSyncAt: string | null;
+  lastError: string | null;
+};
+
 type TopicRow = {
   id: string;
   name: string;
@@ -22,6 +33,7 @@ type TopicRow = {
   enabled: boolean;
   sortOrder: number;
   scheduleId: string | null;
+  sources: TopicSourceRow[];
 };
 
 type ScheduleRow = {
@@ -720,6 +732,69 @@ function scheduleLabel(schedules: ScheduleRow[], scheduleId: string | null): str
   return match?.name ?? "Unknown schedule";
 }
 
+function defaultTopicSources(): TopicSourceRow[] {
+  return [
+    {
+      id: `new-web`,
+      kind: "web",
+      enabled: true,
+      sortOrder: 0,
+      config: { keywords: "" },
+      connectionId: null,
+      lastSyncAt: null,
+      lastError: null,
+    },
+  ];
+}
+
+function sourcesFromTopic(topic: TopicRow): TopicSourceRow[] {
+  if (topic.sources?.length) {
+    return topic.sources.map((source) => ({
+      ...source,
+      config:
+        source.kind === "telegram"
+          ? {
+              peers: source.config.peers ?? [],
+              lookbackHours: source.config.lookbackHours ?? null,
+            }
+          : { keywords: source.config.keywords ?? topic.keywords },
+    }));
+  }
+  return [
+    {
+      id: `legacy-web-${topic.id}`,
+      kind: "web",
+      enabled: true,
+      sortOrder: 0,
+      config: { keywords: topic.keywords },
+      connectionId: null,
+      lastSyncAt: null,
+      lastError: null,
+    },
+  ];
+}
+
+function sourcesPayload(sources: TopicSourceRow[]) {
+  return sources.map((source, index) =>
+    source.kind === "telegram"
+      ? {
+          kind: "telegram" as const,
+          enabled: source.enabled,
+          sortOrder: index,
+          config: {
+            peers: source.config.peers ?? [],
+            lookbackHours: source.config.lookbackHours ?? null,
+          },
+        }
+      : {
+          kind: "web" as const,
+          enabled: source.enabled,
+          sortOrder: index,
+          config: { keywords: source.config.keywords ?? "" },
+        },
+  );
+}
+
 function TopicsSection({
   initialTopics,
   schedules,
@@ -730,22 +805,29 @@ function TopicsSection({
   leaveGuardRef?: { current: (() => Promise<boolean>) | null };
 }) {
   const router = useRouter();
+  const initialSources =
+    initialTopics[0] != null ? sourcesFromTopic(initialTopics[0]) : defaultTopicSources();
   const initialForm =
     initialTopics[0] != null
       ? {
           name: initialTopics[0].name,
-          keywords: initialTopics[0].keywords,
           sortOrder: String(initialTopics[0].sortOrder),
           scheduleId: initialTopics[0].scheduleId ?? "",
+          sourcesJson: JSON.stringify(sourcesPayload(initialSources)),
         }
-      : { name: "", keywords: "", sortOrder: "0", scheduleId: "" };
+      : {
+          name: "",
+          sortOrder: "0",
+          scheduleId: "",
+          sourcesJson: JSON.stringify(sourcesPayload(defaultTopicSources())),
+        };
 
   const [topics, setTopics] = useState(initialTopics);
   const [selection, setSelection] = useState<"new" | string>(
     initialTopics[0]?.id ?? "new",
   );
   const [name, setName] = useState(initialForm.name);
-  const [keywords, setKeywords] = useState(initialForm.keywords);
+  const [sources, setSources] = useState<TopicSourceRow[]>(initialSources);
   const [sortOrder, setSortOrder] = useState(initialForm.sortOrder);
   const [scheduleId, setScheduleId] = useState(initialForm.scheduleId);
   const [baseline, setBaseline] = useState(initialForm);
@@ -768,23 +850,31 @@ function TopicsSection({
     [selection, topics],
   );
 
+  const sourcesJson = JSON.stringify(sourcesPayload(sources));
   const isDirty =
     name !== baseline.name ||
-    keywords !== baseline.keywords ||
     sortOrder !== baseline.sortOrder ||
-    scheduleId !== baseline.scheduleId;
+    scheduleId !== baseline.scheduleId ||
+    sourcesJson !== baseline.sourcesJson;
 
   const emptyForm = useCallback(
-    () => ({ name: "", keywords: "", sortOrder: "0", scheduleId: "" }),
+    () => ({
+      name: "",
+      sortOrder: "0",
+      scheduleId: "",
+      sourcesJson: JSON.stringify(sourcesPayload(defaultTopicSources())),
+    }),
     [],
   );
 
   const formFromTopic = useCallback((topic: TopicRow) => {
+    const nextSources = sourcesFromTopic(topic);
     return {
       name: topic.name,
-      keywords: topic.keywords,
       sortOrder: String(topic.sortOrder),
       scheduleId: topic.scheduleId ?? "",
+      sourcesJson: JSON.stringify(sourcesPayload(nextSources)),
+      sources: nextSources,
     };
   }, []);
 
@@ -797,8 +887,9 @@ function TopicsSection({
       setGenerateStatus(null);
       if (next === "new") {
         const form = emptyForm();
+        const nextSources = defaultTopicSources();
         setName(form.name);
-        setKeywords(form.keywords);
+        setSources(nextSources);
         setSortOrder(form.sortOrder);
         setScheduleId(form.scheduleId);
         setBaseline(form);
@@ -807,9 +898,10 @@ function TopicsSection({
       const topic = topics.find((row) => row.id === next);
       if (!topic) {
         const form = emptyForm();
+        const nextSources = defaultTopicSources();
         setSelection("new");
         setName(form.name);
-        setKeywords(form.keywords);
+        setSources(nextSources);
         setSortOrder(form.sortOrder);
         setScheduleId(form.scheduleId);
         setBaseline(form);
@@ -817,10 +909,15 @@ function TopicsSection({
       }
       const form = formFromTopic(topic);
       setName(form.name);
-      setKeywords(form.keywords);
+      setSources(form.sources);
       setSortOrder(form.sortOrder);
       setScheduleId(form.scheduleId);
-      setBaseline(form);
+      setBaseline({
+        name: form.name,
+        sortOrder: form.sortOrder,
+        scheduleId: form.scheduleId,
+        sourcesJson: form.sourcesJson,
+      });
     },
     [emptyForm, formFromTopic, topics],
   );
@@ -882,8 +979,17 @@ function TopicsSection({
     if (!name.trim()) {
       return "Name is required.";
     }
-    if (!keywords.trim()) {
-      return "Keywords / notes are required so the agent can scan the web.";
+    const enabled = sources.filter((source) => source.enabled);
+    if (enabled.length === 0) {
+      return "Enable at least one source.";
+    }
+    for (const source of enabled) {
+      if (source.kind === "web" && !(source.config.keywords ?? "").trim()) {
+        return "Enabled web sources need keywords / notes.";
+      }
+      if (source.kind === "telegram" && !(source.config.peers ?? []).length) {
+        return "Enabled Telegram sources need at least one peer (e.g. Abkhaziaz).";
+      }
     }
     return null;
   }
@@ -904,9 +1010,9 @@ function TopicsSection({
 
     const payload = {
       name: name.trim(),
-      keywords: keywords.trim(),
       sortOrder: Number(sortOrder),
       scheduleId: scheduleId || null,
+      sources: sourcesPayload(sources),
     };
 
     const result =
@@ -928,26 +1034,35 @@ function TopicsSection({
 
     const topic = (result.data as { topic?: TopicRow }).topic;
     if (topic) {
+      const withSources: TopicRow = {
+        ...topic,
+        sources: topic.sources?.length ? topic.sources : sourcesFromTopic(topic),
+      };
       setTopics((prev) => {
-        const rest = prev.filter((row) => row.id !== topic.id);
-        return [...rest, topic].sort(
+        const rest = prev.filter((row) => row.id !== withSources.id);
+        return [...rest, withSources].sort(
           (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
         );
       });
-      const form = formFromTopic(topic);
-      setSelection(topic.id);
+      const form = formFromTopic(withSources);
+      setSelection(withSources.id);
       setName(form.name);
-      setKeywords(form.keywords);
+      setSources(form.sources);
       setSortOrder(form.sortOrder);
       setScheduleId(form.scheduleId);
-      setBaseline(form);
+      setBaseline({
+        name: form.name,
+        sortOrder: form.sortOrder,
+        scheduleId: form.scheduleId,
+        sourcesJson: form.sourcesJson,
+      });
       setMessage(selection === "new" ? "Topic added." : "Topic updated.");
     } else {
       setBaseline({
         name: payload.name,
-        keywords: payload.keywords,
         sortOrder: String(payload.sortOrder),
         scheduleId: payload.scheduleId ?? "",
+        sourcesJson: JSON.stringify(payload.sources),
       });
       setMessage(selection === "new" ? "Topic added." : "Topic updated.");
     }
@@ -1098,7 +1213,9 @@ function TopicsSection({
       return;
     }
     if (!topic.keywords.trim()) {
-      setGenerateStatus("Add keywords / notes before generating.");
+      setGenerateStatus(
+        "Add web source keywords before generating (Telegram ingest ships in a later phase).",
+      );
       return;
     }
 
@@ -1155,7 +1272,7 @@ function TopicsSection({
       : !selectedTopic.enabled
         ? "Enable the topic before generating."
         : !selectedTopic.keywords.trim()
-          ? "Add keywords / notes before generating."
+          ? "Add web source keywords before generating (Telegram ingest ships later)."
           : activeJob
             ? `Job ${activeJob.id} in progress…`
             : null
@@ -1165,8 +1282,8 @@ function TopicsSection({
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Topics</h2>
       <p style={{ margin: "0.5rem 0 0", color: "#555", fontSize: "0.95rem" }}>
-        Pick a topic to edit, or add a new one. Name and keywords are required. Use Generate to run
-        only the selected topic.
+        Pick a topic to edit, or add a new one. Configure web and/or Telegram sources. Generate still uses
+        web keywords until Telegram ingest ships.
       </p>
 
       <div
@@ -1240,30 +1357,169 @@ function TopicsSection({
                 style={inputStyle}
               />
             </label>
-            <label style={fieldStyle}>
-              Keywords / topic notes
-              <textarea
-                required
-                value={keywords}
-                onChange={(event) => {
-                  setKeywords(event.target.value);
-                  setFieldError(undefined);
-                }}
-                rows={8}
-                placeholder={"search terms…\nPrefer: …\nSkip: …"}
-                style={{
-                  ...inputStyle,
-                  width: "100%",
-                  minHeight: "8rem",
-                  resize: "vertical",
-                  fontFamily: "inherit",
-                  boxSizing: "border-box",
-                }}
-              />
-              <span style={{ color: "#666", fontSize: "0.85rem" }}>
-                Required. Multi-line OK. Search terms and per-topic prefer/skip rules go here.
-              </span>
-            </label>
+
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+                <strong style={{ fontSize: "0.95rem" }}>Sources</strong>
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  disabled={pending}
+                  onClick={() =>
+                    setSources((prev) => [
+                      ...prev,
+                      {
+                        id: `new-web-${prev.length}`,
+                        kind: "web",
+                        enabled: true,
+                        sortOrder: prev.length,
+                        config: { keywords: "" },
+                        connectionId: null,
+                        lastSyncAt: null,
+                        lastError: null,
+                      },
+                    ])
+                  }
+                >
+                  Add web
+                </button>
+                <button
+                  type="button"
+                  style={buttonStyle}
+                  disabled={pending}
+                  onClick={() =>
+                    setSources((prev) => [
+                      ...prev,
+                      {
+                        id: `new-tg-${prev.length}`,
+                        kind: "telegram",
+                        enabled: true,
+                        sortOrder: prev.length,
+                        config: { peers: [], lookbackHours: null },
+                        connectionId: null,
+                        lastSyncAt: null,
+                        lastError: null,
+                      },
+                    ])
+                  }
+                >
+                  Add Telegram
+                </button>
+              </div>
+
+              {sources.map((source, index) => (
+                <div
+                  key={`${source.id}-${index}`}
+                  style={{
+                    border: "1px solid #ddd",
+                    padding: "0.75rem",
+                    display: "grid",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
+                    <label style={{ display: "flex", gap: "0.35rem", alignItems: "center", fontSize: "0.9rem" }}>
+                      <input
+                        type="checkbox"
+                        checked={source.enabled}
+                        onChange={(event) => {
+                          const enabled = event.target.checked;
+                          setSources((prev) =>
+                            prev.map((row, i) => (i === index ? { ...row, enabled } : row)),
+                          );
+                          setFieldError(undefined);
+                        }}
+                      />
+                      Enabled
+                    </label>
+                    <span style={{ fontSize: "0.9rem", color: "#555" }}>
+                      {source.kind === "web" ? "Web" : "Telegram"}
+                    </span>
+                    <button
+                      type="button"
+                      style={buttonStyle}
+                      disabled={pending || sources.length <= 1}
+                      onClick={() => {
+                        setSources((prev) => prev.filter((_, i) => i !== index));
+                        setFieldError(undefined);
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  {source.kind === "web" ? (
+                    <label style={fieldStyle}>
+                      Keywords / topic notes
+                      <textarea
+                        value={source.config.keywords ?? ""}
+                        onChange={(event) => {
+                          const keywords = event.target.value;
+                          setSources((prev) =>
+                            prev.map((row, i) =>
+                              i === index ? { ...row, config: { keywords } } : row,
+                            ),
+                          );
+                          setFieldError(undefined);
+                        }}
+                        rows={6}
+                        placeholder={"search terms…\nPrefer: …\nSkip: …"}
+                        style={{
+                          ...inputStyle,
+                          width: "100%",
+                          minHeight: "6rem",
+                          resize: "vertical",
+                          fontFamily: "inherit",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <label style={fieldStyle}>
+                      Peers (one per line or comma-separated)
+                      <textarea
+                        value={(source.config.peers ?? []).join("\n")}
+                        onChange={(event) => {
+                          const peers = event.target.value
+                            .split(/[\n,]+/)
+                            .map((part) => part.trim())
+                            .filter(Boolean);
+                          setSources((prev) =>
+                            prev.map((row, i) =>
+                              i === index
+                                ? {
+                                    ...row,
+                                    config: {
+                                      peers,
+                                      lookbackHours: row.config.lookbackHours ?? null,
+                                    },
+                                  }
+                                : row,
+                            ),
+                          );
+                          setFieldError(undefined);
+                        }}
+                        rows={4}
+                        placeholder={"Abkhaziaz\n@SomeChannel"}
+                        style={{
+                          ...inputStyle,
+                          width: "100%",
+                          minHeight: "4.5rem",
+                          resize: "vertical",
+                          fontFamily: "inherit",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                      <span style={{ color: "#666", fontSize: "0.85rem" }}>
+                        Group/channel usernames. Ingest uses the linked Telegram account (API keys). Fetching
+                        starts in a later phase.
+                      </span>
+                    </label>
+                  )}
+                </div>
+              ))}
+            </div>
+
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end" }}>
               <label style={fieldStyle}>
                 Sort order

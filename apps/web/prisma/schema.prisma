@@ -36,6 +36,7 @@ enum GenerationStepStatus {
 model Topic {
   id         String    @id @default(cuid())
   name       String
+  /// Mirrored from enabled web TopicSource keywords until digests read sources directly.
   keywords   String    @default("")
   enabled    Boolean   @default(true)
   sortOrder  Int       @default(0)
@@ -44,8 +45,33 @@ model Topic {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  schedule   Schedule?   @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  schedule   Schedule?     @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   topicPages TopicPage[]
+  sources    TopicSource[]
+}
+
+/// One ingest/config source attached to a topic (DD-0005 Phase 2).
+model TopicSource {
+  id           String    @id @default(cuid())
+  topicId      String
+  /// web | telegram | rss | vk | x | …
+  kind         String
+  enabled      Boolean   @default(true)
+  sortOrder    Int       @default(0)
+  /// kind-specific JSON, e.g. web {keywords}, telegram {peers, lookbackHours}
+  configJson   String    @default("{}")
+  /// Optional FK when kind needs a linked SocialConnection (v1 telegram may resolve globally).
+  connectionId String?
+  lastSyncAt   DateTime?
+  lastError    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  topic      Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  connection SocialConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@index([topicId, sortOrder])
+  @@index([kind, enabled])
 }
 
 model Schedule {
@@ -295,6 +321,8 @@ model SocialConnection {
 
   @@unique([provider])
   @@index([status])
+
+  topicSources TopicSource[]
 }
 
 model AllowedUser {

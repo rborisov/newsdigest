@@ -271,6 +271,30 @@ model StoryReview {
   @@index([reviewIndexPageId])
 }
 
+/// Linked social / messaging accounts for multi-source ingest (DD-0005).
+/// v1: at most one row per provider (e.g. one Telegram user session).
+model SocialConnection {
+  id           String    @id @default(cuid())
+  /// telegram | vk | x | …
+  provider     String
+  /// linked | linking | error | disconnected
+  status       String    @default("disconnected")
+  displayName  String    @default("")
+  externalId   String    @default("")
+  /// AES-GCM encrypted MTProto / OAuth session material
+  sessionEnc   String    @default("")
+  /// AES-GCM encrypted mid-login state (phone, phoneCodeHash, …)
+  linkStateEnc String    @default("")
+  lastError    String?
+  linkedAt     DateTime?
+  linkedBy     String    @default("")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([provider])
+  @@index([status])
+}
+
 model AllowedUser {
   id        String   @id @default(cuid())
   email     String   @unique

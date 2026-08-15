@@ -3,13 +3,14 @@ import { requireAdmin } from "@/lib/require-admin";
 import { prisma } from "@/lib/db";
 import { DEFAULT_REVIEW_TEMPLATE } from "@/lib/story-review";
 import { syncScheduleHumanFieldsFromCron } from "@/lib/sync-schedule-human";
+import { getTelegramConnectionPublic } from "@/lib/telegram-connection";
 
 export default async function AdminPage() {
   const session = await requireAdmin();
 
   await syncScheduleHumanFieldsFromCron();
 
-  const [users, topics, schedules, prompt, telegraph, about, jobs] = await Promise.all([
+  const [users, topics, schedules, prompt, telegraph, about, jobs, telegram] = await Promise.all([
     prisma.allowedUser.findMany({
       orderBy: [{ isAdmin: "desc" }, { email: "asc" }],
       select: { id: true, email: true, isAdmin: true },
@@ -106,6 +107,7 @@ export default async function AdminPage() {
         },
       },
     }),
+    getTelegramConnectionPublic(),
   ]);
 
   if (!prompt || !telegraph || !about) {
@@ -130,6 +132,8 @@ export default async function AdminPage() {
           authorUrl: telegraph.authorUrl,
         },
         cursorApiKeyConfigured: Boolean(process.env.CURSOR_API_KEY?.trim()),
+        telegramApiConfigured: telegram.telegramApiConfigured,
+        telegramConnection: telegram.connection,
         jobs: jobs.map((job) => {
           const now = Date.now();
           const createdMs = job.createdAt.getTime();

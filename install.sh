@@ -31,6 +31,9 @@ YANDEX_CLIENT_ID=""
 YANDEX_CLIENT_SECRET=""
 CURSOR_API_KEY=""
 TELEGRAPH_ACCESS_TOKEN=""
+TELEGRAM_API_ID=""
+TELEGRAM_API_HASH=""
+CONNECTIONS_SECRET=""
 NEXTAUTH_URL=""
 NEXTAUTH_SECRET=""
 INTERNAL_API_KEY=""
@@ -355,6 +358,9 @@ load_env_defaults() {
       YANDEX_CLIENT_SECRET) YANDEX_CLIENT_SECRET="${val}" ;;
       CURSOR_API_KEY) CURSOR_API_KEY="${val}" ;;
       TELEGRAPH_ACCESS_TOKEN) TELEGRAPH_ACCESS_TOKEN="${val}" ;;
+      TELEGRAM_API_ID) TELEGRAM_API_ID="${val}" ;;
+      TELEGRAM_API_HASH) TELEGRAM_API_HASH="${val}" ;;
+      CONNECTIONS_SECRET) CONNECTIONS_SECRET="${val}" ;;
       NEXTAUTH_SECRET) NEXTAUTH_SECRET="${val}" ;;
       INTERNAL_API_KEY) INTERNAL_API_KEY="${val}" ;;
       NEXTAUTH_URL)
@@ -402,6 +408,9 @@ prompt_config() {
 
   prompt_secret TELEGRAPH_ACCESS_TOKEN "Telegra.ph access token (optional)" "${TELEGRAPH_ACCESS_TOKEN}"
 
+  prompt TELEGRAM_API_ID "Telegram API id from my.telegram.org (optional, for Connections)" "${TELEGRAM_API_ID}"
+  prompt_secret TELEGRAM_API_HASH "Telegram API hash (optional)" "${TELEGRAM_API_HASH}"
+
   if [[ -z "${NEXTAUTH_SECRET}" ]]; then
     NEXTAUTH_SECRET="$(gen_secret)"
     log "Generated NEXTAUTH_SECRET"
@@ -409,6 +418,10 @@ prompt_config() {
   if [[ -z "${INTERNAL_API_KEY}" ]]; then
     INTERNAL_API_KEY="$(gen_secret)"
     log "Generated INTERNAL_API_KEY"
+  fi
+  if [[ -z "${CONNECTIONS_SECRET}" ]]; then
+    CONNECTIONS_SECRET="$(gen_secret)"
+    log "Generated CONNECTIONS_SECRET"
   fi
 
   NEXTAUTH_URL="https://${DOMAIN}"
@@ -444,6 +457,11 @@ AGENT_WORKSPACE=${WORKSPACE_DIR}
 AGENT_MUTEX_PATH=/var/lock/cursor-agent.lock
 
 TELEGRAPH_ACCESS_TOKEN=${TELEGRAPH_ACCESS_TOKEN}
+
+# Telegram user session for Admin → Connections (https://my.telegram.org)
+TELEGRAM_API_ID=${TELEGRAM_API_ID}
+TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+CONNECTIONS_SECRET=${CONNECTIONS_SECRET}
 
 # Absolute SQLite path (host)
 DATABASE_URL=file:${DATA_DIR}/digest.db

@@ -53,6 +53,18 @@ type TelegraphMetaRow = {
   authorUrl: string;
 };
 
+type SocialConnectionRow = {
+  provider: string;
+  status: string;
+  displayName: string;
+  externalId: string;
+  lastError: string | null;
+  linkedAt: string | null;
+  linkStep: "awaiting_code" | "awaiting_password" | null;
+  isCodeViaApp: boolean | null;
+  passwordHint: string | null;
+};
+
 type AboutPageRow = {
   enabledEn: boolean;
   enabledRu: boolean;
@@ -106,6 +118,8 @@ export type AdminInitialData = {
   about: AboutPageRow;
   telegraph: TelegraphMetaRow;
   cursorApiKeyConfigured: boolean;
+  telegramApiConfigured: boolean;
+  telegramConnection: SocialConnectionRow;
   jobs: GenerationJobRow[];
 };
 
@@ -2372,6 +2386,203 @@ function SystemSection() {
   );
 }
 
+function ConnectionsSection({
+  initialConnection,
+  telegramApiConfigured,
+}: {
+  initialConnection: SocialConnectionRow;
+  telegramApiConfigured: boolean;
+}) {
+  const [connection, setConnection] = useState(initialConnection);
+  const [apiConfigured, setApiConfigured] = useState(telegramApiConfigured);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<string>();
+
+  async function refresh() {
+    const result = await adminFetch("/api/admin/connections");
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    const data = result.data as {
+      connection: SocialConnectionRow;
+      telegramApiConfigured: boolean;
+    };
+    setConnection(data.connection);
+    setApiConfigured(data.telegramApiConfigured);
+  }
+
+  async function run(
+    path: string,
+    body?: Record<string, string>,
+    successMsg?: string,
+  ) {
+    setBusy(true);
+    setError(undefined);
+    setMessage(undefined);
+    const result = await adminFetch(path, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      await refresh();
+      return;
+    }
+    const data = result.data as { connection: SocialConnectionRow };
+    setConnection(data.connection);
+    setMessage(successMsg);
+    if (data.connection.status === "linked") {
+      setPhone("");
+      setCode("");
+      setPassword("");
+    }
+  }
+
+  const linked = connection.status === "linked";
+  const linking = connection.status === "linking";
+  const awaitingCode = linking && connection.linkStep === "awaiting_code";
+  const awaitingPassword = linking && connection.linkStep === "awaiting_password";
+
+  return (
+    <section style={sectionStyle}>
+      <h2 style={headingStyle}>Connections</h2>
+      <p style={{ color: "#555", marginTop: 0, maxWidth: "40rem" }}>
+        Link messaging accounts used for multi-source topics (DD-0005). Sessions are encrypted at rest;
+        never paste them into agent prompts.
+      </p>
+
+      <div
+        style={{
+          borderTop: "1px solid #ddd",
+          paddingTop: "1rem",
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.75rem",
+          maxWidth: "28rem",
+        }}
+      >
+        <h3 style={{ fontSize: "1rem", margin: 0 }}>Telegram</h3>
+        <p style={{ margin: 0, fontSize: "0.875rem", color: "#555" }}>
+          API credentials: {apiConfigured ? "Configured" : "Missing TELEGRAM_API_ID / TELEGRAM_API_HASH"}
+        </p>
+        <p style={{ margin: 0 }}>
+          Status: <strong>{connection.status}</strong>
+          {connection.displayName ? ` · ${connection.displayName}` : null}
+          {connection.linkedAt ? ` · linked ${formatJobTime(connection.linkedAt)}` : null}
+        </p>
+        {connection.lastError ? <p style={errorStyle}>Last error: {connection.lastError}</p> : null}
+
+        {!linked && !awaitingCode && !awaitingPassword ? (
+          <label style={fieldStyle}>
+            Phone (international)
+            <input
+              style={inputStyle}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+79001234567"
+              autoComplete="tel"
+              disabled={busy || !apiConfigured}
+            />
+          </label>
+        ) : null}
+
+        {awaitingCode ? (
+          <label style={fieldStyle}>
+            Login code {connection.isCodeViaApp ? "(Telegram app)" : "(SMS)"}
+            <input
+              style={inputStyle}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="12345"
+              autoComplete="one-time-code"
+              disabled={busy}
+            />
+          </label>
+        ) : null}
+
+        {awaitingPassword ? (
+          <label style={fieldStyle}>
+            2FA password{connection.passwordHint ? ` (hint: ${connection.passwordHint})` : ""}
+            <input
+              style={inputStyle}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+        ) : null}
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+          {!linked && !awaitingCode && !awaitingPassword ? (
+            <button
+              type="button"
+              style={buttonStyle}
+              disabled={busy || !apiConfigured || !phone.trim()}
+              onClick={() => void run("/api/admin/connections/telegram/start", { phone }, "Code sent.")}
+            >
+              Link Telegram
+            </button>
+          ) : null}
+          {awaitingCode ? (
+            <button
+              type="button"
+              style={buttonStyle}
+              disabled={busy || !code.trim()}
+              onClick={() => void run("/api/admin/connections/telegram/code", { code })}
+            >
+              Submit code
+            </button>
+          ) : null}
+          {awaitingPassword ? (
+            <button
+              type="button"
+              style={buttonStyle}
+              disabled={busy || !password}
+              onClick={() => void run("/api/admin/connections/telegram/password", { password })}
+            >
+              Submit 2FA
+            </button>
+          ) : null}
+          {linking ? (
+            <button
+              type="button"
+              style={buttonStyle}
+              disabled={busy}
+              onClick={() => void run("/api/admin/connections/telegram/cancel", undefined, "Link cancelled.")}
+            >
+              Cancel
+            </button>
+          ) : null}
+          {linked ? (
+            <button
+              type="button"
+              style={buttonStyle}
+              disabled={busy}
+              onClick={() => {
+                if (!window.confirm("Disconnect Telegram and delete the stored session?")) return;
+                void run("/api/admin/connections/telegram/disconnect", undefined, "Disconnected.");
+              }}
+            >
+              Disconnect
+            </button>
+          ) : null}
+          <button type="button" style={buttonStyle} disabled={busy} onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        <StatusMessage message={message} error={error} />
+      </div>
+    </section>
+  );
+}
+
 const ADMIN_TABS = [
   { id: "jobs", label: "Jobs" },
   { id: "people", label: "People" },
@@ -2379,6 +2590,7 @@ const ADMIN_TABS = [
   { id: "topics", label: "Topics" },
   { id: "schedules", label: "Schedules" },
   { id: "about", label: "About" },
+  { id: "connections", label: "Connections" },
   { id: "system", label: "System" },
   { id: "keys", label: "API keys" },
 ] as const;
@@ -2445,7 +2657,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
 
       <section className="hero" style={{ marginBottom: "1.25rem" }}>
         <h1 style={{ maxWidth: "none", fontSize: "clamp(1.8rem, 4vw, 2.4rem)" }}>Admin</h1>
-        <p>Jobs, people, prompt, topics, schedules, system, and API keys.</p>
+        <p>Jobs, people, prompt, topics, schedules, connections, system, and API keys.</p>
       </section>
 
       <nav
@@ -2483,6 +2695,12 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
       ) : null}
       {tab === "schedules" ? <SchedulesSection initialSchedules={data.schedules} /> : null}
       {tab === "about" ? <AboutSection initialAbout={data.about} /> : null}
+      {tab === "connections" ? (
+        <ConnectionsSection
+          initialConnection={data.telegramConnection}
+          telegramApiConfigured={data.telegramApiConfigured}
+        />
+      ) : null}
       {tab === "system" ? <SystemSection /> : null}
       {tab === "keys" ? (
         <KeysSection

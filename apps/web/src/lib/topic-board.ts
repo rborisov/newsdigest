@@ -90,7 +90,12 @@ export function selectBoardPages(
     });
   }
 
-  return board;
+  // Newest digests first (same order as the topics sidebar).
+  return board.sort(
+    (a, b) =>
+      b.publishedAt.getTime() - a.publishedAt.getTime() ||
+      a.topicName.localeCompare(b.topicName),
+  );
 }
 
 /** Latest cached page per topic, newest update first (for home sidebar). */

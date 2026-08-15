@@ -46,8 +46,41 @@ describe("selectBoardPages", () => {
       now,
     );
     assert.equal(board.length, 2);
-    assert.equal(board[0]?.pageId, "p0");
-    assert.equal(board[1]?.pageId, "p2");
+    // Newest publishedAt first (Ops July 20, then AI July 1).
+    assert.equal(board[0]?.pageId, "p2");
+    assert.equal(board[1]?.pageId, "p0");
+  });
+
+  it("orders board cards by publishedAt descending", () => {
+    const board = selectBoardPages(
+      [
+        {
+          id: "p-old",
+          topicId: "t1",
+          topicName: "AI",
+          title: "Old",
+          telegraphUrl: "u1",
+          publishedAt: new Date("2026-07-28T10:00:00Z"),
+          storyTitles: [],
+          htmlContent: "",
+        },
+        {
+          id: "p-new",
+          topicId: "t2",
+          topicName: "Ops",
+          title: "New",
+          telegraphUrl: "u2",
+          publishedAt: new Date("2026-07-29T11:00:00Z"),
+          storyTitles: [],
+          htmlContent: "",
+        },
+      ],
+      topics,
+      0,
+      now,
+    );
+    assert.equal(board[0]?.pageId, "p-new");
+    assert.equal(board[1]?.pageId, "p-old");
   });
 });
 

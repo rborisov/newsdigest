@@ -1213,10 +1213,13 @@ function TopicsSection({
       return;
     }
     if (!topic.keywords.trim()) {
-      setGenerateStatus(
-        "Add web source keywords before generating (Telegram ingest ships in a later phase).",
+      const hasTelegram = (topic.sources ?? []).some(
+        (source) => source.kind === "telegram" && source.enabled,
       );
-      return;
+      if (!hasTelegram) {
+        setGenerateStatus("Add web keywords or an enabled Telegram source before generating.");
+        return;
+      }
     }
 
     setGeneratePending(true);
@@ -1271,8 +1274,9 @@ function TopicsSection({
       ? "Save changes before generating."
       : !selectedTopic.enabled
         ? "Enable the topic before generating."
-        : !selectedTopic.keywords.trim()
-          ? "Add web source keywords before generating (Telegram ingest ships later)."
+        : !selectedTopic.keywords.trim() &&
+            !(selectedTopic.sources ?? []).some((source) => source.kind === "telegram" && source.enabled)
+          ? "Add web keywords or an enabled Telegram source before generating."
           : activeJob
             ? `Job ${activeJob.id} in progress…`
             : null
@@ -1282,8 +1286,8 @@ function TopicsSection({
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Topics</h2>
       <p style={{ margin: "0.5rem 0 0", color: "#555", fontSize: "0.95rem" }}>
-        Pick a topic to edit, or add a new one. Configure web and/or Telegram sources. Generate still uses
-        web keywords until Telegram ingest ships.
+        Pick a topic to edit, or add a new one. Configure web and/or Telegram sources. Generate syncs Telegram
+        peers into ingest before the agent runs.
       </p>
 
       <div
@@ -1511,8 +1515,12 @@ function TopicsSection({
                         }}
                       />
                       <span style={{ color: "#666", fontSize: "0.85rem" }}>
-                        Group/channel usernames. Ingest uses the linked Telegram account (API keys). Fetching
-                        starts in a later phase.
+                        Group/channel usernames. Uses the linked Telegram account (API keys). Synced on
+                        Generate into filtered ingest for the agent.
+                        {source.lastSyncAt
+                          ? ` Last sync: ${new Date(source.lastSyncAt).toLocaleString()}.`
+                          : ""}
+                        {source.lastError ? ` Last error: ${source.lastError}` : ""}
                       </span>
                     </label>
                   )}

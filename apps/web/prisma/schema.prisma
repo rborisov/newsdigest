@@ -48,6 +48,7 @@ model Topic {
   schedule   Schedule?     @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   topicPages TopicPage[]
   sources    TopicSource[]
+  ingestItems IngestItem[]
 }
 
 /// One ingest/config source attached to a topic (DD-0005 Phase 2).
@@ -69,9 +70,36 @@ model TopicSource {
 
   topic      Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
   connection SocialConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  ingestItems IngestItem[]
 
   @@index([topicId, sortOrder])
   @@index([kind, enabled])
+}
+
+/// Normalized item from a source adapter after rule filtering (DD-0005 Phase 3).
+model IngestItem {
+  id            String    @id @default(cuid())
+  topicId       String
+  topicSourceId String?
+  /// telegram | web | rss | …
+  kind          String
+  /// Stable id within kind, e.g. telegram peer:messageId
+  externalId    String
+  url           String?
+  title         String?
+  text          String
+  publishedAt   DateTime?
+  /// kept | ads | fluff | question | other
+  quality       String    @default("kept")
+  rawJson       String    @default("{}")
+  createdAt     DateTime  @default(now())
+
+  topic       Topic        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topicSource TopicSource? @relation(fields: [topicSourceId], references: [id], onDelete: SetNull)
+
+  @@unique([topicId, kind, externalId])
+  @@index([topicId, quality, publishedAt])
+  @@index([topicSourceId])
 }
 
 model Schedule {

@@ -599,9 +599,29 @@ export async function disconnectTelegram(): Promise<PublicSocialConnection> {
   return toPublicConnection(row);
 }
 
-/** Decrypt stored session for ingest (Phase 2+). Returns null if not linked. */
+/** Decrypt stored session for ingest. Returns null if not linked. */
 export async function getLinkedTelegramSessionString(): Promise<string | null> {
   const row = await prisma.socialConnection.findUnique({ where: { provider: TELEGRAM_PROVIDER } });
   if (!row || row.status !== "linked" || !row.sessionEnc.trim()) return null;
   return decryptSecret(row.sessionEnc);
+}
+
+/** Run work with a connected linked Telegram user client (teleproto). */
+export async function withLinkedTelegramClient<T>(
+  fn: (client: TeleprotoClient) => Promise<T>,
+): Promise<T> {
+  const session = await getLinkedTelegramSessionString();
+  if (!session) {
+    throw new Error("Telegram is not linked. Connect an account under Admin → API keys.");
+  }
+  const cfg = await resolveTelegramApiConfigAsync();
+  if (!cfg) {
+    throw new Error("Telegram API id/hash are not configured. Save them in Admin → API keys.");
+  }
+  const client = await createClient(session, cfg);
+  try {
+    return await fn(client);
+  } finally {
+    await client.disconnect().catch(() => undefined);
+  }
 }

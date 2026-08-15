@@ -14,6 +14,7 @@ import { releaseAgentMutexBestEffort } from "./agent-mutex";
 import { prisma as defaultPrisma } from "./db";
 import { appendJobLogLine, jobLogPath } from "./job-logs";
 import { buildTopicPublishPrompt } from "./prompt";
+import { formatKeptIngestForPrompt, summarizeSyncForLog, syncTopicIngest } from "./sync-topic-ingest";
 
 export type PipelineDeps = {
   prisma?: PrismaClient;
@@ -136,13 +137,25 @@ export async function startStep(
     if (!topic) {
       return { ok: false, error: `Topic ${step.topicName} no longer exists.` };
     }
-    prompt = await buildTopicPublishPrompt(
-      jobId,
-      step.id,
-      topic,
-      deps,
-      deps.spawnedBy,
-    );
+
+    // Phase 3: sync telegram sources → IngestItem before the agent runs.
+    try {
+      const sync = await syncTopicIngest(topic.id, { prisma: client });
+      appendJobLogLine(jobId, summarizeSyncForLog(sync));
+      for (const source of sync.sources) {
+        if (source.error) {
+          appendJobLogLine(jobId, `ingest source ${source.topicSourceId}: ${source.error}`);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Ingest sync failed.";
+      appendJobLogLine(jobId, `ingest sync failed: ${message}`);
+    }
+
+    const ingestBlock = await formatKeptIngestForPrompt(topic.id, { prisma: client });
+    prompt = await buildTopicPublishPrompt(jobId, step.id, topic, deps, deps.spawnedBy, {
+      ingestBlock,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to build step prompt.";
     await failJobWithError(jobId, message, deps);

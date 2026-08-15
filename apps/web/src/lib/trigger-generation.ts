@@ -58,7 +58,13 @@ export async function triggerGeneration(
 
     const topic = await defaultPrisma.topic.findUnique({
       where: { id: topicId },
-      select: { id: true, name: true, enabled: true, keywords: true },
+      select: {
+        id: true,
+        name: true,
+        enabled: true,
+        keywords: true,
+        sources: { select: { kind: true, enabled: true }, where: { enabled: true } },
+      },
     });
     if (!topic) {
       return { ok: false, error: "Topic not found.", status: 404 };
@@ -70,10 +76,12 @@ export async function triggerGeneration(
         status: 400,
       };
     }
-    if (!topic.keywords.trim()) {
+    const hasWebKeywords = Boolean(topic.keywords.trim());
+    const hasTelegram = topic.sources.some((source) => source.kind === "telegram");
+    if (!hasWebKeywords && !hasTelegram) {
       return {
         ok: false,
-        error: `Topic "${topic.name}" needs keywords / notes before generating.`,
+        error: `Topic "${topic.name}" needs web keywords or an enabled Telegram source before generating.`,
         status: 400,
       };
     }

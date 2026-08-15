@@ -277,6 +277,7 @@ export async function buildTopicPublishPrompt(
   topic: Pick<Topic, "name" | "keywords" | "scheduleId">,
   deps: PromptDeps = {},
   triggeredBy?: string,
+  options: { ingestBlock?: string } = {},
 ): Promise<string> {
   const now = deps.now ?? new Date();
   const db = deps.prisma ?? defaultPrisma;
@@ -296,13 +297,18 @@ export async function buildTopicPublishPrompt(
 
   const periodHours = resolveSchedulePeriodHours(schedule, promptConfig.periodHours);
 
-  const assembled = applyPromptPlaceholders(promptConfig.template, {
+  let assembled = applyPromptPlaceholders(promptConfig.template, {
     topics: formatTopicWithKeywords(topic),
     periodHours,
     date: formatPromptDate(now, promptConfig.displayTimezone),
     language: promptConfig.language || "English",
     excludeStories: formatExcludeStories(excludeStories),
   });
+
+  const ingestBlock = options.ingestBlock?.trim();
+  if (ingestBlock) {
+    assembled = `${assembled}\n\n${ingestBlock}`;
+  }
 
   return appendTopicPublishMetadata(assembled, jobId, stepId, topic.name, {
     triggeredBy,

@@ -806,6 +806,29 @@ form:has(> .nav-link) {
   text-decoration: underline;
 }
 
+.board-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin-top: 0.15rem;
+}
+
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.faq-entry h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.4rem;
+}
+
+.faq-entry p {
+  margin: 0 0 0.35rem;
+}
+
 .board-index-fallback {
   margin-top: 1rem;
 }

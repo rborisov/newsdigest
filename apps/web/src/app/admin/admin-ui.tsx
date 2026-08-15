@@ -859,6 +859,14 @@ function TopicsSection({
     question: number;
     other: number;
   } | null>(null);
+  const [faqEnabled, setFaqEnabled] = useState(false);
+  const [faqName, setFaqName] = useState("");
+  const [faqKeywords, setFaqKeywords] = useState("");
+  const [faqPrompt, setFaqPrompt] = useState("");
+  const [faqSlug, setFaqSlug] = useState<string | null>(null);
+  const [faqEntryCount, setFaqEntryCount] = useState(0);
+  const [faqPending, setFaqPending] = useState(false);
+  const [faqStatus, setFaqStatus] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<{ id: string; status: string } | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<"new" | string | null>(null);
   const leaveDialogResolver = useRef<((ok: boolean) => void) | null>(null);
@@ -910,6 +918,13 @@ function TopicsSection({
       setIngestStatus(null);
       setIngestItems([]);
       setIngestCounts(null);
+      setFaqStatus(null);
+      setFaqEnabled(false);
+      setFaqName("");
+      setFaqKeywords("");
+      setFaqPrompt("");
+      setFaqSlug(null);
+      setFaqEntryCount(0);
       if (next === "new") {
         const form = emptyForm();
         const nextSources = defaultTopicSources();
@@ -1255,12 +1270,100 @@ function TopicsSection({
     setIngestStatus(null);
   }, []);
 
+  const loadFaq = useCallback(async (topicId: string) => {
+    const result = await adminFetch(`/api/admin/topics/${topicId}/faq`);
+    if (!result.ok) {
+      setFaqStatus(result.error);
+      return;
+    }
+    const data = result.data as {
+      faq: {
+        enabled: boolean;
+        name: string;
+        keywords: string;
+        promptTemplate: string;
+        slug: string;
+        entryCount: number;
+      };
+    };
+    setFaqEnabled(data.faq.enabled);
+    setFaqName(data.faq.name);
+    setFaqKeywords(data.faq.keywords);
+    setFaqPrompt(data.faq.promptTemplate);
+    setFaqSlug(data.faq.slug);
+    setFaqEntryCount(data.faq.entryCount);
+    setFaqStatus(null);
+  }, []);
+
   useEffect(() => {
     if (selection === "new") {
       return;
     }
     void loadIngestPreview(selection);
-  }, [selection, loadIngestPreview]);
+    void loadFaq(selection);
+  }, [selection, loadIngestPreview, loadFaq]);
+
+  async function saveFaq(topic: TopicRow) {
+    setFaqPending(true);
+    setFaqStatus(null);
+    setError(undefined);
+    const result = await adminFetch(`/api/admin/topics/${topic.id}/faq`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        enabled: faqEnabled,
+        name: faqName,
+        keywords: faqKeywords,
+        promptTemplate: faqPrompt,
+      }),
+    });
+    setFaqPending(false);
+    if (!result.ok) {
+      setFaqStatus(result.error);
+      return;
+    }
+    const data = result.data as {
+      faq: {
+        enabled: boolean;
+        name: string;
+        keywords: string;
+        promptTemplate: string;
+        slug: string;
+        entryCount: number;
+      };
+    };
+    setFaqEnabled(data.faq.enabled);
+    setFaqName(data.faq.name);
+    setFaqKeywords(data.faq.keywords);
+    setFaqPrompt(data.faq.promptTemplate);
+    setFaqSlug(data.faq.slug);
+    setFaqEntryCount(data.faq.entryCount);
+    setFaqStatus(
+      data.faq.enabled
+        ? `FAQ saved. Public page: /faq/${data.faq.slug}`
+        : "FAQ saved (disabled — not public yet).",
+    );
+    router.refresh();
+  }
+
+  async function refreshFaq(topic: TopicRow) {
+    setFaqPending(true);
+    setFaqStatus(null);
+    setError(undefined);
+    const result = await adminFetch(`/api/admin/topics/${topic.id}/faq/refresh`, {
+      method: "POST",
+    });
+    setFaqPending(false);
+    if (!result.ok) {
+      setFaqStatus(result.error);
+      return;
+    }
+    const data = result.data as { upserted?: number; candidates?: number };
+    setFaqStatus(
+      `Refreshed FAQ from ingest: upserted ${data.upserted ?? 0} of ${data.candidates ?? 0} candidates.`,
+    );
+    await loadFaq(topic.id);
+    router.refresh();
+  }
 
   async function syncIngest(topic: TopicRow) {
     if (isDirty) {
@@ -1786,6 +1889,99 @@ function TopicsSection({
                     })}
                 </ul>
               )}
+            </div>
+          ) : null}
+
+          {selectedTopic ? (
+            <div style={{ marginTop: "1.5rem", borderTop: "1px solid #ddd", paddingTop: "1rem" }}>
+              <h3 style={{ ...headingStyle, margin: "0 0 0.75rem" }}>Living FAQ</h3>
+              <p style={{ color: "#666", fontSize: "0.9rem", marginTop: 0 }}>
+                Builds Q&amp;A from Telegram ingest (question + kept messages). Enable to publish at{" "}
+                {faqSlug ? (
+                  <a href={`/faq/${faqSlug}`} target="_blank" rel="noreferrer">
+                    /faq/{faqSlug}
+                  </a>
+                ) : (
+                  "/faq/…"
+                )}
+                . Active entries: {faqEntryCount}.
+              </p>
+              <label
+                style={{
+                  display: "flex",
+                  gap: "0.5rem",
+                  alignItems: "center",
+                  marginBottom: "0.75rem",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={faqEnabled}
+                  onChange={(event) => setFaqEnabled(event.target.checked)}
+                />
+                Enable public FAQ
+              </label>
+              <label style={fieldStyle}>
+                FAQ name
+                <input
+                  type="text"
+                  value={faqName}
+                  onChange={(event) => setFaqName(event.target.value)}
+                  style={inputStyle}
+                />
+              </label>
+              <label style={fieldStyle}>
+                FAQ keywords / themes
+                <textarea
+                  value={faqKeywords}
+                  onChange={(event) => setFaqKeywords(event.target.value)}
+                  rows={2}
+                  placeholder="Optional themes to bias matching"
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    minHeight: "3rem",
+                    resize: "vertical",
+                    fontFamily: "inherit",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </label>
+              <label style={fieldStyle}>
+                FAQ prompt (for future agent refresh)
+                <textarea
+                  value={faqPrompt}
+                  onChange={(event) => setFaqPrompt(event.target.value)}
+                  rows={5}
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    minHeight: "6rem",
+                    resize: "vertical",
+                    fontFamily: "inherit",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <button
+                  type="button"
+                  disabled={faqPending}
+                  style={buttonStyle}
+                  onClick={() => void saveFaq(selectedTopic)}
+                >
+                  {faqPending ? "Saving…" : "Save FAQ"}
+                </button>
+                <button
+                  type="button"
+                  disabled={faqPending}
+                  style={buttonStyle}
+                  onClick={() => void refreshFaq(selectedTopic)}
+                >
+                  Refresh from ingest
+                </button>
+              </div>
+              {faqStatus ? <p style={messageStyle}>{faqStatus}</p> : null}
             </div>
           ) : null}
 

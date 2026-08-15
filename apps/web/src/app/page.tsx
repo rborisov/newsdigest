@@ -98,14 +98,21 @@ export default async function HomePage() {
                         Body not stored for this page yet — open on Telegra.ph.
                       </p>
                     )}
-                    <a
-                      className="board-link"
-                      href={card.telegraphUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Open on Telegra.ph →
-                    </a>
+                    <div className="board-card-links">
+                      <a
+                        className="board-link"
+                        href={card.telegraphUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open on Telegra.ph →
+                      </a>
+                      {card.faqSlug ? (
+                        <Link className="board-link" href={`/faq/${card.faqSlug}`}>
+                          FAQ →
+                        </Link>
+                      ) : null}
+                    </div>
                   </article>
                 );
               })}

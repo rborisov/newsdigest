@@ -49,6 +49,50 @@ model Topic {
   topicPages TopicPage[]
   sources    TopicSource[]
   ingestItems IngestItem[]
+  faqSpace   FaqSpace?
+}
+
+/// Living FAQ product linked 1:1 to a topic (DD-0005 Phase 5).
+model FaqSpace {
+  id             String   @id @default(cuid())
+  topicId        String   @unique
+  enabled        Boolean  @default(false)
+  /// URL segment for /faq/[slug]
+  slug           String   @unique
+  name           String   @default("")
+  promptTemplate String   @default("")
+  keywords       String   @default("")
+  /// inherit_topic | subset | custom (v1: inherit_topic)
+  sourceMode     String   @default("inherit_topic")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  topic   Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  entries FaqEntry[]
+
+  @@index([enabled])
+}
+
+model FaqEntry {
+  id              String    @id @default(cuid())
+  faqSpaceId      String
+  question        String
+  /// Normalized cluster key for upserts
+  questionKey     String
+  answer          String    @default("")
+  /// active | expired | conflict | archived
+  status          String    @default("active")
+  lastConfirmedAt DateTime?
+  expiresAt       DateTime?
+  confidence      Float?
+  evidenceJson    String    @default("[]")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  faqSpace FaqSpace @relation(fields: [faqSpaceId], references: [id], onDelete: Cascade)
+
+  @@unique([faqSpaceId, questionKey])
+  @@index([faqSpaceId, status])
 }
 
 /// One ingest/config source attached to a topic (DD-0005 Phase 2).

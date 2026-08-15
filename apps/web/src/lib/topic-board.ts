@@ -9,6 +9,8 @@ export type BoardCard = {
   publishedAt: Date;
   storyTitles: string[];
   htmlContent: string;
+  /** Public FAQ slug when FaqSpace is enabled for this topic. */
+  faqSlug: string | null;
 };
 
 export type SidebarItem = {
@@ -87,6 +89,7 @@ export function selectBoardPages(
       publishedAt: latest.publishedAt,
       storyTitles: latest.storyTitles,
       htmlContent: latest.htmlContent,
+      faqSlug: null,
     });
   }
 
@@ -231,7 +234,7 @@ export async function loadTopicBoard(
 }> {
   const staleDays = await getBoardStaleDays(prisma);
 
-  const [meta, topics, promptConfig] = await Promise.all([
+  const [meta, topics, promptConfig, faqSpaces] = await Promise.all([
     prisma.telegraphMeta.findUnique({ where: { id: "default" } }),
     prisma.topic.findMany({
       where: { enabled: true },
@@ -242,18 +245,27 @@ export async function loadTopicBoard(
       where: { id: "default" },
       select: { displayTimezone: true },
     }),
+    prisma.faqSpace.findMany({
+      where: { enabled: true },
+      select: { topicId: true, slug: true },
+    }),
   ]);
 
   const latestPages = (
     await Promise.all(topics.map((topic) => loadLatestPageForTopic(prisma, topic)))
   ).filter((page): page is BoardPageRow => page !== null);
 
+  const faqSlugByTopic = new Map(faqSpaces.map((row) => [row.topicId, row.slug]));
+
   const board = selectBoardPages(
     latestPages.map(toPageInput),
     topics,
     staleDays,
     now,
-  );
+  ).map((card) => ({
+    ...card,
+    faqSlug: faqSlugByTopic.get(card.topicId) ?? null,
+  }));
 
   return {
     board,

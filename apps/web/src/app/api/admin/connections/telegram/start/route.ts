@@ -11,8 +11,14 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as { phone?: string };
   try {
-    const connection = await startTelegramLink(body.phone ?? "", auth.session.user?.email ?? "");
-    return NextResponse.json({ connection });
+    const result = await startTelegramLink(body.phone ?? "", auth.session.user?.email ?? "");
+    if ("alreadyLinked" in result && result.alreadyLinked) {
+      return NextResponse.json({
+        connection: result.connection,
+        alreadyLinked: true,
+      });
+    }
+    return NextResponse.json({ connection: result });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to start Telegram link.";
     return NextResponse.json({ error: message }, { status: 400 });

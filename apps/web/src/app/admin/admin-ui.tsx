@@ -2391,10 +2391,12 @@ function ConnectionsSection({
   initialConnection,
   telegramApiConfigured,
   initialTelegramApiId,
+  active,
 }: {
   initialConnection: SocialConnectionRow;
   telegramApiConfigured: boolean;
   initialTelegramApiId: number | null;
+  active: boolean;
 }) {
   const [connection, setConnection] = useState(initialConnection);
   const [apiConfigured, setApiConfigured] = useState(telegramApiConfigured);
@@ -2425,7 +2427,19 @@ function ConnectionsSection({
     if (data.telegramApiId != null) {
       setApiId(String(data.telegramApiId));
     }
+    if (data.connection.status === "linked") {
+      setPhone("");
+      setCode("");
+      setPassword("");
+    }
   }
+
+  // Tab switches remounted this section with stale SSR props; always re-fetch when shown.
+  useEffect(() => {
+    if (!active) return;
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh on show only
+  }, [active]);
 
   async function run(
     path: string,
@@ -2449,6 +2463,7 @@ function ConnectionsSection({
       connection?: SocialConnectionRow;
       telegramApiConfigured?: boolean;
       telegramApiId?: number;
+      alreadyLinked?: boolean;
     };
     if (data.connection) {
       setConnection(data.connection);
@@ -2460,6 +2475,13 @@ function ConnectionsSection({
       setApiIdShown(data.telegramApiId);
       setApiId(String(data.telegramApiId));
       setApiHash("");
+    }
+    if (data.alreadyLinked) {
+      setMessage("Telegram is already linked.");
+      setPhone("");
+      setCode("");
+      setPassword("");
+      return;
     }
     setMessage(successMsg);
     if (data.connection?.status === "linked") {
@@ -2698,6 +2720,7 @@ function resolveAdminTabHash(raw: string): AdminTabId | null {
 
 export function AdminClient({ data }: { data: AdminInitialData }) {
   const [tab, setTab] = useState<AdminTabId>("jobs");
+  const [connectionsVisited, setConnectionsVisited] = useState(false);
   const topicsLeaveGuardRef = useRef<(() => Promise<boolean>) | null>(null);
 
   useEffect(() => {
@@ -2705,6 +2728,9 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
     const resolved = resolveAdminTabHash(fromHash);
     if (resolved) {
       setTab(resolved);
+      if (resolved === "connections") {
+        setConnectionsVisited(true);
+      }
     }
   }, []);
 
@@ -2714,6 +2740,9 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
       if (!ok) {
         return;
       }
+    }
+    if (next === "connections") {
+      setConnectionsVisited(true);
     }
     setTab(next);
     window.history.replaceState(null, "", `#${next}`);
@@ -2782,12 +2811,15 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
       ) : null}
       {tab === "schedules" ? <SchedulesSection initialSchedules={data.schedules} /> : null}
       {tab === "about" ? <AboutSection initialAbout={data.about} /> : null}
-      {tab === "connections" ? (
-        <ConnectionsSection
-          initialConnection={data.telegramConnection}
-          telegramApiConfigured={data.telegramApiConfigured}
-          initialTelegramApiId={data.telegramApiId}
-        />
+      {connectionsVisited ? (
+        <div style={{ display: tab === "connections" ? "block" : "none" }} hidden={tab !== "connections"}>
+          <ConnectionsSection
+            active={tab === "connections"}
+            initialConnection={data.telegramConnection}
+            telegramApiConfigured={data.telegramApiConfigured}
+            initialTelegramApiId={data.telegramApiId}
+          />
+        </div>
       ) : null}
       {tab === "system" ? <SystemSection /> : null}
       {tab === "keys" ? (

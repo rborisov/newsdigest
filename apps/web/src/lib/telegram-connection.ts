@@ -309,7 +309,10 @@ export async function getTelegramConnectionPublic(): Promise<{
   };
 }
 
-export async function startTelegramLink(phoneRaw: string, linkedBy: string): Promise<PublicSocialConnection> {
+export async function startTelegramLink(
+  phoneRaw: string,
+  linkedBy: string,
+): Promise<PublicSocialConnection | { connection: PublicSocialConnection; alreadyLinked: true }> {
   const cfg = await resolveTelegramApiConfigAsync();
   if (!cfg) {
     throw new Error(
@@ -317,8 +320,9 @@ export async function startTelegramLink(phoneRaw: string, linkedBy: string): Pro
     );
   }
   const existing = await prisma.socialConnection.findUnique({ where: { provider: TELEGRAM_PROVIDER } });
-  if (existing?.status === "linked" && existing.sessionEnc.trim()) {
-    throw new Error("Telegram is already linked. Disconnect it before linking another account.");
+  if (existing?.status === "linked") {
+    // Even if sessionEnc is empty, do not start a second login over a linked row.
+    return { connection: toPublicConnection(existing), alreadyLinked: true };
   }
   const phone = normalizePhone(phoneRaw);
   let client: TeleprotoClient | null = null;

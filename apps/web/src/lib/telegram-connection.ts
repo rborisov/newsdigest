@@ -155,6 +155,10 @@ export async function saveTelegramAppCredentials(
   apiIdRaw: string,
   apiHashRaw: string,
 ): Promise<{ telegramApiConfigured: boolean; telegramApiId: number; connection: PublicSocialConnection }> {
+  const existing = await prisma.socialConnection.findUnique({ where: { provider: TELEGRAM_PROVIDER } });
+  if (existing?.status === "linked") {
+    throw new Error("Disconnect Telegram before changing API id/hash (the session was created for the current app).");
+  }
   const apiId = Number(String(apiIdRaw).trim());
   if (!Number.isFinite(apiId) || apiId <= 0) {
     throw new Error("Telegram API id must be a positive number (from https://my.telegram.org).");
@@ -162,11 +166,11 @@ export async function saveTelegramAppCredentials(
   const hashInput = String(apiHashRaw).trim();
   let apiHash = hashInput;
   if (!apiHash) {
-    const existing = await loadStoredTelegramApiConfig();
-    if (!existing?.apiHash) {
+    const stored = await loadStoredTelegramApiConfig();
+    if (!stored?.apiHash) {
       throw new Error("Telegram API hash is required (from https://my.telegram.org).");
     }
-    apiHash = existing.apiHash;
+    apiHash = stored.apiHash;
   }
   const cfg = parseTelegramApiCredentials(String(apiId), apiHash);
   const row = await upsertTelegramRow({

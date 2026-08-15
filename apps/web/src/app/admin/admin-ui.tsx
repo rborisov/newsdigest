@@ -2525,47 +2525,57 @@ function ConnectionsSection({
           {apiConfigured
             ? ` · saved${apiIdShown != null ? ` (api id ${apiIdShown})` : ""}`
             : " · not saved yet"}
+          {linked ? " · disconnect to change" : null}
         </p>
-        <label style={fieldStyle}>
-          API id
-          <input
-            style={inputStyle}
-            value={apiId}
-            onChange={(e) => setApiId(e.target.value)}
-            placeholder="12345678"
-            inputMode="numeric"
-            autoComplete="off"
-            disabled={busy}
-          />
-        </label>
-        <label style={fieldStyle}>
-          API hash
-          <input
-            style={inputStyle}
-            type="password"
-            value={apiHash}
-            onChange={(e) => setApiHash(e.target.value)}
-            placeholder={apiConfigured ? "Leave blank to keep current hash" : "Paste API hash"}
-            autoComplete="off"
-            disabled={busy}
-          />
-        </label>
-        <div>
-          <button
-            type="button"
-            style={buttonStyle}
-            disabled={busy || !apiId.trim() || (!apiHash.trim() && !apiConfigured)}
-            onClick={() =>
-              void run(
-                "/api/admin/connections/telegram/credentials",
-                { apiId: apiId.trim(), apiHash: apiHash.trim() },
-                "API credentials saved.",
-              )
-            }
-          >
-            Save API credentials
-          </button>
-        </div>
+        {linked ? (
+          <p style={{ margin: 0, fontSize: "0.875rem", color: "#555" }}>
+            API id/hash identify the Telegram <em>application</em>. Your user session was authorized for the
+            current app — changing them would break the link until you sign in again.
+          </p>
+        ) : (
+          <>
+            <label style={fieldStyle}>
+              API id
+              <input
+                style={inputStyle}
+                value={apiId}
+                onChange={(e) => setApiId(e.target.value)}
+                placeholder="12345678"
+                inputMode="numeric"
+                autoComplete="off"
+                disabled={busy || linking}
+              />
+            </label>
+            <label style={fieldStyle}>
+              API hash
+              <input
+                style={inputStyle}
+                type="password"
+                value={apiHash}
+                onChange={(e) => setApiHash(e.target.value)}
+                placeholder={apiConfigured ? "Leave blank to keep current hash" : "Paste API hash"}
+                autoComplete="off"
+                disabled={busy || linking}
+              />
+            </label>
+            <div>
+              <button
+                type="button"
+                style={buttonStyle}
+                disabled={busy || linking || !apiId.trim() || (!apiHash.trim() && !apiConfigured)}
+                onClick={() =>
+                  void run(
+                    "/api/admin/connections/telegram/credentials",
+                    { apiId: apiId.trim(), apiHash: apiHash.trim() },
+                    "API credentials saved.",
+                  )
+                }
+              >
+                Save API credentials
+              </button>
+            </div>
+          </>
+        )}
 
         <p style={{ margin: "0.5rem 0 0", borderTop: "1px solid #eee", paddingTop: "0.75rem" }}>
           Status: <strong>{connection.status}</strong>

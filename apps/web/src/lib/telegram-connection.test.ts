@@ -5,7 +5,8 @@ import { encryptSecret } from "@/lib/connection-secrets";
 import {
   formatTelegramDisplayName,
   normalizePhone,
-  resolveTelegramApiConfig,
+  parseTelegramApiCredentials,
+  resolveTelegramApiConfigFromEnv,
   toPublicConnection,
 } from "@/lib/telegram-connection";
 
@@ -33,18 +34,35 @@ describe("formatTelegramDisplayName", () => {
   });
 });
 
-describe("resolveTelegramApiConfig", () => {
-  it("returns null when incomplete", () => {
-    assert.equal(resolveTelegramApiConfig({}), null);
-    assert.equal(resolveTelegramApiConfig({ TELEGRAM_API_ID: "1" }), null);
-    assert.equal(resolveTelegramApiConfig({ TELEGRAM_API_HASH: "abc" }), null);
-  });
-
+describe("parseTelegramApiCredentials", () => {
   it("parses valid id/hash", () => {
-    assert.deepEqual(resolveTelegramApiConfig({ TELEGRAM_API_ID: "12345", TELEGRAM_API_HASH: "deadbeef" }), {
+    assert.deepEqual(parseTelegramApiCredentials("12345", "deadbeef"), {
       apiId: 12345,
       apiHash: "deadbeef",
     });
+  });
+
+  it("rejects invalid id or empty hash", () => {
+    assert.throws(() => parseTelegramApiCredentials("0", "abc"), /positive/i);
+    assert.throws(() => parseTelegramApiCredentials("1", "  "), /hash/i);
+  });
+});
+
+describe("resolveTelegramApiConfigFromEnv", () => {
+  it("returns null when incomplete", () => {
+    assert.equal(resolveTelegramApiConfigFromEnv({}), null);
+    assert.equal(resolveTelegramApiConfigFromEnv({ TELEGRAM_API_ID: "1" }), null);
+    assert.equal(resolveTelegramApiConfigFromEnv({ TELEGRAM_API_HASH: "abc" }), null);
+  });
+
+  it("parses valid id/hash", () => {
+    assert.deepEqual(
+      resolveTelegramApiConfigFromEnv({ TELEGRAM_API_ID: "12345", TELEGRAM_API_HASH: "deadbeef" }),
+      {
+        apiId: 12345,
+        apiHash: "deadbeef",
+      },
+    );
   });
 });
 

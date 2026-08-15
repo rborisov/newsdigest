@@ -285,6 +285,8 @@ model SocialConnection {
   sessionEnc   String    @default("")
   /// AES-GCM encrypted mid-login state (phone, phoneCodeHash, …)
   linkStateEnc String    @default("")
+  /// AES-GCM encrypted my.telegram.org app credentials { apiId, apiHash }
+  appConfigEnc String    @default("")
   lastError    String?
   linkedAt     DateTime?
   linkedBy     String    @default("")

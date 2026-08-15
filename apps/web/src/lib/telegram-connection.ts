@@ -69,15 +69,91 @@ export function formatTelegramDisplayName(user: {
   return "Telegram user";
 }
 
-export function resolveTelegramApiConfig(
+/** Parse my.telegram.org API id + hash from admin or env input. */
+export function parseTelegramApiCredentials(apiIdRaw: string, apiHashRaw: string): TelegramApiConfig {
+  const apiId = Number(String(apiIdRaw).trim());
+  const apiHash = String(apiHashRaw).trim();
+  if (!Number.isFinite(apiId) || apiId <= 0) {
+    throw new Error("Telegram API id must be a positive number (from https://my.telegram.org).");
+  }
+  if (!apiHash) {
+    throw new Error("Telegram API hash is required (from https://my.telegram.org).");
+  }
+  return { apiId, apiHash };
+}
+
+/** Env fallback only — prefer Admin-stored credentials via resolveTelegramApiConfig(). */
+export function resolveTelegramApiConfigFromEnv(
   env: Partial<NodeJS.ProcessEnv> = process.env,
 ): TelegramApiConfig | null {
   const apiIdRaw = env.TELEGRAM_API_ID?.trim();
   const apiHash = env.TELEGRAM_API_HASH?.trim();
   if (!apiIdRaw || !apiHash) return null;
-  const apiId = Number(apiIdRaw);
-  if (!Number.isFinite(apiId) || apiId <= 0) return null;
-  return { apiId, apiHash };
+  try {
+    return parseTelegramApiCredentials(apiIdRaw, apiHash);
+  } catch {
+    return null;
+  }
+}
+
+/** @deprecated use resolveTelegramApiConfigFromEnv or await resolveTelegramApiConfig() */
+export function resolveTelegramApiConfig(
+  env: Partial<NodeJS.ProcessEnv> = process.env,
+): TelegramApiConfig | null {
+  return resolveTelegramApiConfigFromEnv(env);
+}
+
+function parseAppConfigEnc(enc: string): TelegramApiConfig | null {
+  if (!enc.trim()) return null;
+  try {
+    const raw = JSON.parse(decryptSecret(enc)) as { apiId?: number; apiHash?: string };
+    if (typeof raw.apiId !== "number" || typeof raw.apiHash !== "string") return null;
+    return parseTelegramApiCredentials(String(raw.apiId), raw.apiHash);
+  } catch {
+    return null;
+  }
+}
+
+async function loadStoredTelegramApiConfig(): Promise<TelegramApiConfig | null> {
+  const row = await prisma.socialConnection.findUnique({
+    where: { provider: TELEGRAM_PROVIDER },
+    select: { appConfigEnc: true },
+  });
+  if (!row) return null;
+  return parseAppConfigEnc(row.appConfigEnc);
+}
+
+/** Admin DB credentials first, then TELEGRAM_API_* env. */
+export async function resolveTelegramApiConfigAsync(): Promise<TelegramApiConfig | null> {
+  return (await loadStoredTelegramApiConfig()) ?? resolveTelegramApiConfigFromEnv();
+}
+
+export async function saveTelegramAppCredentials(
+  apiIdRaw: string,
+  apiHashRaw: string,
+): Promise<{ telegramApiConfigured: boolean; telegramApiId: number; connection: PublicSocialConnection }> {
+  const apiId = Number(String(apiIdRaw).trim());
+  if (!Number.isFinite(apiId) || apiId <= 0) {
+    throw new Error("Telegram API id must be a positive number (from https://my.telegram.org).");
+  }
+  const hashInput = String(apiHashRaw).trim();
+  let apiHash = hashInput;
+  if (!apiHash) {
+    const existing = await loadStoredTelegramApiConfig();
+    if (!existing?.apiHash) {
+      throw new Error("Telegram API hash is required (from https://my.telegram.org).");
+    }
+    apiHash = existing.apiHash;
+  }
+  const cfg = parseTelegramApiCredentials(String(apiId), apiHash);
+  const row = await upsertTelegramRow({
+    appConfigEnc: encryptSecret(JSON.stringify(cfg)),
+  });
+  return {
+    telegramApiConfigured: true,
+    telegramApiId: cfg.apiId,
+    connection: toPublicConnection(row),
+  };
 }
 
 function parseLinkState(enc: string): TelegramLinkState | null {
@@ -138,35 +214,39 @@ function sessionStringOf(client: TelegramClient): string {
 
 async function upsertTelegramRow(
   data: {
-    status: ConnectionStatus;
+    status?: ConnectionStatus;
     displayName?: string;
     externalId?: string;
     sessionEnc?: string;
     linkStateEnc?: string;
+    appConfigEnc?: string;
     lastError?: string | null;
     linkedAt?: Date | null;
     linkedBy?: string;
   },
 ) {
+  const status = data.status ?? "disconnected";
   return prisma.socialConnection.upsert({
     where: { provider: TELEGRAM_PROVIDER },
     create: {
       provider: TELEGRAM_PROVIDER,
-      status: data.status,
+      status,
       displayName: data.displayName ?? "",
       externalId: data.externalId ?? "",
       sessionEnc: data.sessionEnc ?? "",
       linkStateEnc: data.linkStateEnc ?? "",
+      appConfigEnc: data.appConfigEnc ?? "",
       lastError: data.lastError ?? null,
       linkedAt: data.linkedAt ?? null,
       linkedBy: data.linkedBy ?? "",
     },
     update: {
-      status: data.status,
+      ...(data.status !== undefined ? { status: data.status } : {}),
       ...(data.displayName !== undefined ? { displayName: data.displayName } : {}),
       ...(data.externalId !== undefined ? { externalId: data.externalId } : {}),
       ...(data.sessionEnc !== undefined ? { sessionEnc: data.sessionEnc } : {}),
       ...(data.linkStateEnc !== undefined ? { linkStateEnc: data.linkStateEnc } : {}),
+      ...(data.appConfigEnc !== undefined ? { appConfigEnc: data.appConfigEnc } : {}),
       ...(data.lastError !== undefined ? { lastError: data.lastError } : {}),
       ...(data.linkedAt !== undefined ? { linkedAt: data.linkedAt } : {}),
       ...(data.linkedBy !== undefined ? { linkedBy: data.linkedBy } : {}),
@@ -177,12 +257,14 @@ async function upsertTelegramRow(
 export async function getTelegramConnectionPublic(): Promise<{
   connection: PublicSocialConnection;
   telegramApiConfigured: boolean;
+  telegramApiId: number | null;
 }> {
-  const cfg = resolveTelegramApiConfig();
+  const cfg = await resolveTelegramApiConfigAsync();
   const row = await prisma.socialConnection.findUnique({ where: { provider: TELEGRAM_PROVIDER } });
   if (!row) {
     return {
       telegramApiConfigured: Boolean(cfg),
+      telegramApiId: cfg?.apiId ?? null,
       connection: {
         provider: TELEGRAM_PROVIDER,
         status: "disconnected",
@@ -198,15 +280,16 @@ export async function getTelegramConnectionPublic(): Promise<{
   }
   return {
     telegramApiConfigured: Boolean(cfg),
+    telegramApiId: cfg?.apiId ?? null,
     connection: toPublicConnection(row),
   };
 }
 
 export async function startTelegramLink(phoneRaw: string, linkedBy: string): Promise<PublicSocialConnection> {
-  const cfg = resolveTelegramApiConfig();
+  const cfg = await resolveTelegramApiConfigAsync();
   if (!cfg) {
     throw new Error(
-      "TELEGRAM_API_ID and TELEGRAM_API_HASH are not configured (get them at https://my.telegram.org).",
+      "Telegram API id/hash are not configured. Save them in Admin → Connections (from https://my.telegram.org).",
     );
   }
   const existing = await prisma.socialConnection.findUnique({ where: { provider: TELEGRAM_PROVIDER } });
@@ -262,9 +345,9 @@ export async function startTelegramLink(phoneRaw: string, linkedBy: string): Pro
 }
 
 export async function submitTelegramCode(codeRaw: string): Promise<PublicSocialConnection> {
-  const cfg = resolveTelegramApiConfig();
+  const cfg = await resolveTelegramApiConfigAsync();
   if (!cfg) {
-    throw new Error("TELEGRAM_API_ID and TELEGRAM_API_HASH are not configured.");
+    throw new Error("Telegram API id/hash are not configured. Save them in Admin → Connections.");
   }
   const code = codeRaw.trim().replace(/\s+/g, "");
   if (!code) {
@@ -332,9 +415,9 @@ export async function submitTelegramCode(codeRaw: string): Promise<PublicSocialC
 }
 
 export async function submitTelegramPassword(passwordRaw: string): Promise<PublicSocialConnection> {
-  const cfg = resolveTelegramApiConfig();
+  const cfg = await resolveTelegramApiConfigAsync();
   if (!cfg) {
-    throw new Error("TELEGRAM_API_ID and TELEGRAM_API_HASH are not configured.");
+    throw new Error("Telegram API id/hash are not configured. Save them in Admin → Connections.");
   }
   const password = passwordRaw; // do not trim aggressively; passwords may have spaces
   if (!password) {
@@ -420,7 +503,7 @@ export async function cancelTelegramLink(): Promise<PublicSocialConnection> {
 
 export async function disconnectTelegram(): Promise<PublicSocialConnection> {
   const existing = await prisma.socialConnection.findUnique({ where: { provider: TELEGRAM_PROVIDER } });
-  const cfg = resolveTelegramApiConfig();
+  const cfg = await resolveTelegramApiConfigAsync();
   if (existing?.sessionEnc.trim() && cfg) {
     let client: TelegramClient | null = null;
     try {

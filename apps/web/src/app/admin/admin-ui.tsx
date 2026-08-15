@@ -119,6 +119,7 @@ export type AdminInitialData = {
   telegraph: TelegraphMetaRow;
   cursorApiKeyConfigured: boolean;
   telegramApiConfigured: boolean;
+  telegramApiId: number | null;
   telegramConnection: SocialConnectionRow;
   jobs: GenerationJobRow[];
 };
@@ -2389,12 +2390,17 @@ function SystemSection() {
 function ConnectionsSection({
   initialConnection,
   telegramApiConfigured,
+  initialTelegramApiId,
 }: {
   initialConnection: SocialConnectionRow;
   telegramApiConfigured: boolean;
+  initialTelegramApiId: number | null;
 }) {
   const [connection, setConnection] = useState(initialConnection);
   const [apiConfigured, setApiConfigured] = useState(telegramApiConfigured);
+  const [apiIdShown, setApiIdShown] = useState(initialTelegramApiId);
+  const [apiId, setApiId] = useState(initialTelegramApiId != null ? String(initialTelegramApiId) : "");
+  const [apiHash, setApiHash] = useState("");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -2411,9 +2417,14 @@ function ConnectionsSection({
     const data = result.data as {
       connection: SocialConnectionRow;
       telegramApiConfigured: boolean;
+      telegramApiId: number | null;
     };
     setConnection(data.connection);
     setApiConfigured(data.telegramApiConfigured);
+    setApiIdShown(data.telegramApiId);
+    if (data.telegramApiId != null) {
+      setApiId(String(data.telegramApiId));
+    }
   }
 
   async function run(
@@ -2434,10 +2445,24 @@ function ConnectionsSection({
       await refresh();
       return;
     }
-    const data = result.data as { connection: SocialConnectionRow };
-    setConnection(data.connection);
+    const data = result.data as {
+      connection?: SocialConnectionRow;
+      telegramApiConfigured?: boolean;
+      telegramApiId?: number;
+    };
+    if (data.connection) {
+      setConnection(data.connection);
+    }
+    if (data.telegramApiConfigured != null) {
+      setApiConfigured(data.telegramApiConfigured);
+    }
+    if (data.telegramApiId != null) {
+      setApiIdShown(data.telegramApiId);
+      setApiId(String(data.telegramApiId));
+      setApiHash("");
+    }
     setMessage(successMsg);
-    if (data.connection.status === "linked") {
+    if (data.connection?.status === "linked") {
       setPhone("");
       setCode("");
       setPassword("");
@@ -2453,8 +2478,8 @@ function ConnectionsSection({
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Connections</h2>
       <p style={{ color: "#555", marginTop: 0, maxWidth: "40rem" }}>
-        Link messaging accounts used for multi-source topics (DD-0005). Sessions are encrypted at rest;
-        never paste them into agent prompts.
+        Link messaging accounts used for multi-source topics (DD-0005). Sessions and API hash are encrypted
+        at rest; never paste them into agent prompts.
       </p>
 
       <div
@@ -2469,9 +2494,56 @@ function ConnectionsSection({
       >
         <h3 style={{ fontSize: "1rem", margin: 0 }}>Telegram</h3>
         <p style={{ margin: 0, fontSize: "0.875rem", color: "#555" }}>
-          API credentials: {apiConfigured ? "Configured" : "Missing TELEGRAM_API_ID / TELEGRAM_API_HASH"}
+          App credentials from{" "}
+          <a href="https://my.telegram.org" target="_blank" rel="noreferrer">
+            my.telegram.org
+          </a>
+          {apiConfigured
+            ? ` · saved${apiIdShown != null ? ` (api id ${apiIdShown})` : ""}`
+            : " · not saved yet"}
         </p>
-        <p style={{ margin: 0 }}>
+        <label style={fieldStyle}>
+          API id
+          <input
+            style={inputStyle}
+            value={apiId}
+            onChange={(e) => setApiId(e.target.value)}
+            placeholder="12345678"
+            inputMode="numeric"
+            autoComplete="off"
+            disabled={busy}
+          />
+        </label>
+        <label style={fieldStyle}>
+          API hash
+          <input
+            style={inputStyle}
+            type="password"
+            value={apiHash}
+            onChange={(e) => setApiHash(e.target.value)}
+            placeholder={apiConfigured ? "Leave blank to keep current hash" : "Paste API hash"}
+            autoComplete="off"
+            disabled={busy}
+          />
+        </label>
+        <div>
+          <button
+            type="button"
+            style={buttonStyle}
+            disabled={busy || !apiId.trim() || (!apiHash.trim() && !apiConfigured)}
+            onClick={() =>
+              void run(
+                "/api/admin/connections/telegram/credentials",
+                { apiId: apiId.trim(), apiHash: apiHash.trim() },
+                "API credentials saved.",
+              )
+            }
+          >
+            Save API credentials
+          </button>
+        </div>
+
+        <p style={{ margin: "0.5rem 0 0", borderTop: "1px solid #eee", paddingTop: "0.75rem" }}>
           Status: <strong>{connection.status}</strong>
           {connection.displayName ? ` · ${connection.displayName}` : null}
           {connection.linkedAt ? ` · linked ${formatJobTime(connection.linkedAt)}` : null}
@@ -2699,6 +2771,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
         <ConnectionsSection
           initialConnection={data.telegramConnection}
           telegramApiConfigured={data.telegramApiConfigured}
+          initialTelegramApiId={data.telegramApiId}
         />
       ) : null}
       {tab === "system" ? <SystemSection /> : null}

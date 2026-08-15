@@ -133,6 +133,7 @@ export default async function AdminPage() {
         },
         cursorApiKeyConfigured: Boolean(process.env.CURSOR_API_KEY?.trim()),
         telegramApiConfigured: telegram.telegramApiConfigured,
+        telegramApiId: telegram.telegramApiId,
         telegramConnection: telegram.connection,
         jobs: jobs.map((job) => {
           const now = Date.now();

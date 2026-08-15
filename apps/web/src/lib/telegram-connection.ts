@@ -1,10 +1,33 @@
-import { Api, TelegramClient } from "teleproto";
-import { StringSession } from "teleproto/sessions";
-import { computeCheck } from "teleproto/Password";
-import { LogLevel } from "teleproto/extensions/Logger";
+import { createRequire } from "node:module";
+import path from "node:path";
+
+// Static import so Next standalone file tracing keeps teleproto in node_modules.
+import { version as teleprotoVersion } from "teleproto";
 
 import { decryptSecret, encryptSecret } from "@/lib/connection-secrets";
 import { prisma } from "@/lib/db";
+
+void teleprotoVersion;
+
+/**
+ * Load teleproto through Node's require (not the Next bundler).
+ * Subpath ESM imports of StringSession vs TelegramClient can duplicate the Session
+ * class under Next and trip: "Only StringSession and StoreSessions are supported".
+ */
+function loadTeleproto() {
+  const require = createRequire(path.join(process.cwd(), "package.json"));
+  const teleproto = require("teleproto") as typeof import("teleproto");
+  const loggerMod = require("teleproto/extensions/Logger") as typeof import("teleproto/extensions/Logger");
+  return {
+    Api: teleproto.Api,
+    TelegramClient: teleproto.TelegramClient,
+    StringSession: teleproto.sessions.StringSession,
+    computeCheck: teleproto.password.computeCheck,
+    LogLevel: loggerMod.LogLevel,
+  };
+}
+
+type TeleprotoClient = InstanceType<ReturnType<typeof loadTeleproto>["TelegramClient"]>;
 
 export const TELEGRAM_PROVIDER = "telegram";
 
@@ -199,7 +222,8 @@ function rpcMessage(err: unknown): string {
   return "Telegram request failed.";
 }
 
-async function createClient(sessionString: string, cfg: TelegramApiConfig): Promise<TelegramClient> {
+async function createClient(sessionString: string, cfg: TelegramApiConfig) {
+  const { TelegramClient, StringSession, LogLevel } = loadTeleproto();
   const client = new TelegramClient(new StringSession(sessionString), cfg.apiId, cfg.apiHash, {
     connectionRetries: 3,
   });
@@ -208,7 +232,7 @@ async function createClient(sessionString: string, cfg: TelegramApiConfig): Prom
   return client;
 }
 
-function sessionStringOf(client: TelegramClient): string {
+function sessionStringOf(client: TeleprotoClient): string {
   return String(client.session.save());
 }
 
@@ -297,7 +321,7 @@ export async function startTelegramLink(phoneRaw: string, linkedBy: string): Pro
     throw new Error("Telegram is already linked. Disconnect it before linking another account.");
   }
   const phone = normalizePhone(phoneRaw);
-  let client: TelegramClient | null = null;
+  let client: TeleprotoClient | null = null;
   try {
     client = await createClient("", cfg);
     const sent = await client.sendCode(
@@ -363,8 +387,9 @@ export async function submitTelegramCode(codeRaw: string): Promise<PublicSocialC
     throw new Error("Waiting for a different step. Refresh and try again.");
   }
 
-  let client: TelegramClient | null = null;
+  let client: TeleprotoClient | null = null;
   try {
+    const { Api } = loadTeleproto();
     client = await createClient(state.session, cfg);
     try {
       const result = await client.invoke(
@@ -433,8 +458,9 @@ export async function submitTelegramPassword(passwordRaw: string): Promise<Publi
     throw new Error("Waiting for a different step. Refresh and try again.");
   }
 
-  let client: TelegramClient | null = null;
+  let client: TeleprotoClient | null = null;
   try {
+    const { Api, computeCheck } = loadTeleproto();
     client = await createClient(state.session, cfg);
     const passwordSrp = await client.invoke(new Api.account.GetPassword());
     const passwordCheck = await computeCheck(passwordSrp, password);
@@ -454,7 +480,7 @@ export async function submitTelegramPassword(passwordRaw: string): Promise<Publi
   }
 }
 
-async function finalizeLinked(client: TelegramClient, linkedBy: string): Promise<PublicSocialConnection> {
+async function finalizeLinked(client: TeleprotoClient, linkedBy: string): Promise<PublicSocialConnection> {
   const me = await client.getMe();
   if (!me || typeof me !== "object" || !("id" in me)) {
     throw new Error("Telegram login succeeded but profile could not be read.");
@@ -505,8 +531,9 @@ export async function disconnectTelegram(): Promise<PublicSocialConnection> {
   const existing = await prisma.socialConnection.findUnique({ where: { provider: TELEGRAM_PROVIDER } });
   const cfg = await resolveTelegramApiConfigAsync();
   if (existing?.sessionEnc.trim() && cfg) {
-    let client: TelegramClient | null = null;
+    let client: TeleprotoClient | null = null;
     try {
+      const { Api } = loadTeleproto();
       const session = decryptSecret(existing.sessionEnc);
       client = await createClient(session, cfg);
       await client.invoke(new Api.auth.LogOut());

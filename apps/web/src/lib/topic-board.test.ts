@@ -96,6 +96,7 @@ describe("boardToNavItems", () => {
         publishedAt: new Date("2026-07-01T12:00:00Z"),
         storyTitles: [],
         htmlContent: "",
+        faqSlug: null,
       },
       {
         topicId: "t2",
@@ -106,6 +107,7 @@ describe("boardToNavItems", () => {
         publishedAt: new Date("2026-07-28T09:00:00Z"),
         storyTitles: [],
         htmlContent: "",
+        faqSlug: null,
       },
     ]);
     assert.equal(nav.length, 2);
@@ -123,6 +125,7 @@ describe("boardToNavItems", () => {
       publishedAt: new Date(`2026-07-${String(i + 1).padStart(2, "0")}T12:00:00Z`),
       storyTitles: [] as string[],
       htmlContent: "",
+      faqSlug: null as string | null,
     }));
     const nav = boardToNavItems(board, 8);
     assert.equal(nav.length, 8);

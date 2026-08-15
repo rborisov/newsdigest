@@ -53,7 +53,7 @@ export function tokenOverlapScore(a: string, b: string): number {
 export function extractExplicitQaPairs(text: string): Array<{ question: string; answer: string }> {
   const pairs: Array<{ question: string; answer: string }> = [];
   const patterns = [
-    /(?:^|\n)\s*(?:Q|Question|Вопрос)\s*[:.\-–—]\s*(.+?)\s*(?:\n|\r)\s*(?:A|Answer|Ответ)\s*[:.\-–—]\s*(.+?)(?=(?:\n\s*(?:Q|Question|Вопрос)\s*[:.\-–—])|$)/gis,
+    /(?:^|\n)\s*(?:Q|Question|Вопрос)\s*[:.\-–—]\s*([\s\S]+?)\s*(?:\n|\r)\s*(?:A|Answer|Ответ)\s*[:.\-–—]\s*([\s\S]+?)(?=(?:\n\s*(?:Q|Question|Вопрос)\s*[:.\-–—])|$)/gi,
   ];
   for (const pattern of patterns) {
     for (const match of text.matchAll(pattern)) {

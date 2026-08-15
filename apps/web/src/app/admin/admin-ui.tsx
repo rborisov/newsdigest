@@ -865,6 +865,14 @@ function TopicsSection({
   const [faqPrompt, setFaqPrompt] = useState("");
   const [faqSlug, setFaqSlug] = useState<string | null>(null);
   const [faqEntryCount, setFaqEntryCount] = useState(0);
+  const [faqEntries, setFaqEntries] = useState<
+    Array<{
+      id: string;
+      question: string;
+      answer: string;
+      lastConfirmedAt: string | null;
+    }>
+  >([]);
   const [faqPending, setFaqPending] = useState(false);
   const [faqStatus, setFaqStatus] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<{ id: string; status: string } | null>(null);
@@ -925,6 +933,7 @@ function TopicsSection({
       setFaqPrompt("");
       setFaqSlug(null);
       setFaqEntryCount(0);
+      setFaqEntries([]);
       if (next === "new") {
         const form = emptyForm();
         const nextSources = defaultTopicSources();
@@ -1285,6 +1294,12 @@ function TopicsSection({
         slug: string;
         entryCount: number;
       };
+      entries: Array<{
+        id: string;
+        question: string;
+        answer: string;
+        lastConfirmedAt: string | null;
+      }>;
     };
     setFaqEnabled(data.faq.enabled);
     setFaqName(data.faq.name);
@@ -1292,6 +1307,7 @@ function TopicsSection({
     setFaqPrompt(data.faq.promptTemplate);
     setFaqSlug(data.faq.slug);
     setFaqEntryCount(data.faq.entryCount);
+    setFaqEntries(data.entries ?? []);
     setFaqStatus(null);
   }, []);
 
@@ -1357,10 +1373,29 @@ function TopicsSection({
       setFaqStatus(result.error);
       return;
     }
-    const data = result.data as { upserted?: number; candidates?: number };
+    const data = result.data as { created?: number; skipped?: number; candidates?: number };
     setFaqStatus(
-      `Refreshed FAQ from ingest: upserted ${data.upserted ?? 0} of ${data.candidates ?? 0} candidates.`,
+      `Refreshed FAQ: added ${data.created ?? 0}, skipped ${data.skipped ?? 0} duplicates (${data.candidates ?? 0} candidates).`,
     );
+    await loadFaq(topic.id);
+    router.refresh();
+  }
+
+  async function deleteFaqEntryRow(topic: TopicRow, entryId: string) {
+    if (!window.confirm("Delete this FAQ entry?")) {
+      return;
+    }
+    setFaqPending(true);
+    setFaqStatus(null);
+    const result = await adminFetch(`/api/admin/topics/${topic.id}/faq/entries/${entryId}`, {
+      method: "DELETE",
+    });
+    setFaqPending(false);
+    if (!result.ok) {
+      setFaqStatus(result.error);
+      return;
+    }
+    setFaqStatus("FAQ entry deleted.");
     await loadFaq(topic.id);
     router.refresh();
   }
@@ -1982,6 +2017,61 @@ function TopicsSection({
                 </button>
               </div>
               {faqStatus ? <p style={messageStyle}>{faqStatus}</p> : null}
+              <div style={{ marginTop: "1rem" }}>
+                <h4 style={{ ...headingStyle, fontSize: "1rem", margin: "0 0 0.5rem" }}>
+                  FAQ entries ({faqEntries.length})
+                </h4>
+                <p style={{ color: "#666", fontSize: "0.85rem", marginTop: 0 }}>
+                  Refresh appends new rows; delete invalid ones. Same question may appear more than once.
+                </p>
+                {faqEntries.length === 0 ? (
+                  <p style={{ color: "#666", fontSize: "0.9rem" }}>
+                    No entries yet. Sync Telegram ingest, then Refresh from ingest.
+                  </p>
+                ) : (
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      margin: 0,
+                      padding: 0,
+                      maxHeight: "22rem",
+                      overflow: "auto",
+                      border: "1px solid #eee",
+                    }}
+                  >
+                    {faqEntries.map((entry) => (
+                      <li
+                        key={entry.id}
+                        style={{
+                          padding: "0.65rem 0.75rem",
+                          borderBottom: "1px solid #f0f0f0",
+                          fontSize: "0.88rem",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: "0.75rem",
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <strong style={{ flex: 1 }}>{entry.question}</strong>
+                          <button
+                            type="button"
+                            disabled={faqPending}
+                            style={{ ...buttonStyle, padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}
+                            onClick={() => void deleteFaqEntryRow(selectedTopic, entry.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                        <div style={{ whiteSpace: "pre-wrap", marginTop: "0.35rem" }}>{entry.answer}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           ) : null}
 

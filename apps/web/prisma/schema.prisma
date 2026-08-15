@@ -77,8 +77,10 @@ model FaqEntry {
   id              String    @id @default(cuid())
   faqSpaceId      String
   question        String
-  /// Normalized cluster key for upserts
+  /// Normalized hint for clustering (not unique — flat list allows duplicates)
   questionKey     String
+  /// Stable fingerprint of evidence ids; dedupes re-sync appends
+  evidenceKey     String
   answer          String    @default("")
   /// active | expired | conflict | archived
   status          String    @default("active")
@@ -91,7 +93,7 @@ model FaqEntry {
 
   faqSpace FaqSpace @relation(fields: [faqSpaceId], references: [id], onDelete: Cascade)
 
-  @@unique([faqSpaceId, questionKey])
+  @@unique([faqSpaceId, evidenceKey])
   @@index([faqSpaceId, status])
 }
 

@@ -70,13 +70,27 @@ export function extractExplicitQaPairs(text: string): Array<{ question: string; 
 export type FaqRefreshCandidate = {
   question: string;
   questionKey: string;
+  evidenceKey: string;
   answer: string;
   evidence: Array<{ sourceKind: string; externalId: string; url?: string | null; at?: string | null }>;
   confidence: number;
 };
 
+/** Fingerprint for append-dedupe across refreshes. */
+export function buildEvidenceKey(
+  evidence: Array<{ sourceKind: string; externalId: string }>,
+  questionKey: string,
+): string {
+  const ids = evidence
+    .map((item) => `${item.sourceKind}:${item.externalId}`)
+    .sort()
+    .join("|");
+  return `${ids}#${questionKey}`.slice(0, 400);
+}
+
 /**
  * Build FAQ candidates from question-quality seeds + kept evidence (no LLM).
+ * Flat list: same question may appear multiple times when evidence differs.
  */
 export function buildFaqCandidatesFromIngest(input: {
   questions: Array<{ text: string; externalId: string; url?: string | null; publishedAt?: Date | null }>;
@@ -85,25 +99,29 @@ export function buildFaqCandidatesFromIngest(input: {
 }): FaqRefreshCandidate[] {
   const keywordBlob = (input.keywords ?? "").trim();
   const out: FaqRefreshCandidate[] = [];
-  const seen = new Set<string>();
+  const seenEvidence = new Set<string>();
 
   for (const kept of input.kept) {
     for (const pair of extractExplicitQaPairs(kept.text)) {
-      const key = normalizeQuestionKey(pair.question);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
+      const questionKey = normalizeQuestionKey(pair.question);
+      if (!questionKey) continue;
+      const evidence = [
+        {
+          sourceKind: "telegram",
+          externalId: kept.externalId,
+          url: kept.url,
+          at: kept.publishedAt?.toISOString() ?? null,
+        },
+      ];
+      const evidenceKey = buildEvidenceKey(evidence, questionKey);
+      if (seenEvidence.has(evidenceKey)) continue;
+      seenEvidence.add(evidenceKey);
       out.push({
         question: pair.question,
-        questionKey: key,
+        questionKey,
+        evidenceKey,
         answer: pair.answer,
-        evidence: [
-          {
-            sourceKind: "telegram",
-            externalId: kept.externalId,
-            url: kept.url,
-            at: kept.publishedAt?.toISOString() ?? null,
-          },
-        ],
+        evidence,
         confidence: 0.7,
       });
     }
@@ -112,8 +130,8 @@ export function buildFaqCandidatesFromIngest(input: {
   for (const question of input.questions) {
     const q = question.text.trim().replace(/\?+\s*$/, "?").trim();
     if (q.length < 8) continue;
-    const key = normalizeQuestionKey(q);
-    if (!key || seen.has(key)) continue;
+    const questionKey = normalizeQuestionKey(q);
+    if (!questionKey) continue;
 
     let best: { text: string; score: number; item: (typeof input.kept)[number] } | null = null;
     for (const kept of input.kept) {
@@ -126,25 +144,31 @@ export function buildFaqCandidatesFromIngest(input: {
       }
     }
     if (!best) continue;
-    seen.add(key);
+
+    const evidence = [
+      {
+        sourceKind: "telegram",
+        externalId: question.externalId,
+        url: question.url,
+        at: question.publishedAt?.toISOString() ?? null,
+      },
+      {
+        sourceKind: "telegram",
+        externalId: best.item.externalId,
+        url: best.item.url,
+        at: best.item.publishedAt?.toISOString() ?? null,
+      },
+    ];
+    const evidenceKey = buildEvidenceKey(evidence, questionKey);
+    if (seenEvidence.has(evidenceKey)) continue;
+    seenEvidence.add(evidenceKey);
+
     out.push({
       question: q.endsWith("?") ? q : `${q}?`,
-      questionKey: key,
+      questionKey,
+      evidenceKey,
       answer: best.text.slice(0, 1200),
-      evidence: [
-        {
-          sourceKind: "telegram",
-          externalId: question.externalId,
-          url: question.url,
-          at: question.publishedAt?.toISOString() ?? null,
-        },
-        {
-          sourceKind: "telegram",
-          externalId: best.item.externalId,
-          url: best.item.url,
-          at: best.item.publishedAt?.toISOString() ?? null,
-        },
-      ],
+      evidence,
       confidence: Math.min(0.95, 0.35 + best.score),
     });
   }

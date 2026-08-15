@@ -51,5 +51,22 @@ describe("faq-space helpers", () => {
     });
     assert.equal(candidates.length, 1);
     assert.match(candidates[0]!.answer, /Border checkpoint/i);
+    assert.ok(candidates[0]!.evidenceKey.includes("peer:1"));
+    assert.ok(candidates[0]!.evidenceKey.includes("peer:2"));
+  });
+
+  it("keeps separate candidates when evidence differs for similar questions", () => {
+    const candidates = buildFaqCandidatesFromIngest({
+      questions: [
+        { text: "Is the border open today?", externalId: "peer:1" },
+        { text: "Is the border open today?", externalId: "peer:3" },
+      ],
+      kept: [
+        { text: "Border checkpoint is open today until evening for cars.", externalId: "peer:2" },
+        { text: "Border checkpoint stays closed overnight.", externalId: "peer:4" },
+      ],
+    });
+    assert.equal(candidates.length, 2);
+    assert.notEqual(candidates[0]!.evidenceKey, candidates[1]!.evidenceKey);
   });
 });

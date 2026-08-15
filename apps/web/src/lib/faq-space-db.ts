@@ -110,11 +110,12 @@ export async function updateFaqSpace(
 
 export type FaqRefreshResult = {
   faqSpaceId: string;
-  upserted: number;
+  created: number;
+  skipped: number;
   candidates: number;
 };
 
-/** Refresh FaqEntry rows from telegram ingest (questions + kept), no Cursor agent. */
+/** Append FaqEntry rows from telegram ingest; skip existing evidenceKey. */
 export async function refreshFaqFromIngest(
   topicId: string,
   deps: { prisma?: PrismaClient; now?: Date } = {},
@@ -144,27 +145,28 @@ export async function refreshFaqFromIngest(
     keywords: space.keywords,
   });
 
-  let upserted = 0;
+  let created = 0;
+  let skipped = 0;
   for (const candidate of candidates) {
-    await client.faqEntry.upsert({
+    const existing = await client.faqEntry.findUnique({
       where: {
-        faqSpaceId_questionKey: {
+        faqSpaceId_evidenceKey: {
           faqSpaceId: space.id,
-          questionKey: candidate.questionKey,
+          evidenceKey: candidate.evidenceKey,
         },
       },
-      create: {
+      select: { id: true },
+    });
+    if (existing) {
+      skipped += 1;
+      continue;
+    }
+    await client.faqEntry.create({
+      data: {
         faqSpaceId: space.id,
         question: candidate.question,
         questionKey: candidate.questionKey,
-        answer: candidate.answer,
-        status: "active",
-        lastConfirmedAt: now,
-        confidence: candidate.confidence,
-        evidenceJson: JSON.stringify(candidate.evidence),
-      },
-      update: {
-        question: candidate.question,
+        evidenceKey: candidate.evidenceKey,
         answer: candidate.answer,
         status: "active",
         lastConfirmedAt: now,
@@ -172,10 +174,15 @@ export async function refreshFaqFromIngest(
         evidenceJson: JSON.stringify(candidate.evidence),
       },
     });
-    upserted += 1;
+    created += 1;
   }
 
-  return { faqSpaceId: space.id, upserted, candidates: candidates.length };
+  return {
+    faqSpaceId: space.id,
+    created,
+    skipped,
+    candidates: candidates.length,
+  };
 }
 
 export async function listActiveFaqEntries(
@@ -192,6 +199,34 @@ export async function listActiveFaqEntries(
       answer: true,
       lastConfirmedAt: true,
       confidence: true,
+      createdAt: true,
     },
   });
+}
+
+/** Hard-delete an entry; must belong to the topic's FAQ space. */
+export async function deleteFaqEntry(
+  topicId: string,
+  entryId: string,
+  deps: { prisma?: PrismaClient } = {},
+): Promise<{ deleted: true }> {
+  const client = deps.prisma ?? defaultPrisma;
+  const space = await client.faqSpace.findUnique({
+    where: { topicId },
+    select: { id: true },
+  });
+  if (!space) {
+    throw new Error("FAQ space not found.");
+  }
+
+  const entry = await client.faqEntry.findFirst({
+    where: { id: entryId, faqSpaceId: space.id },
+    select: { id: true },
+  });
+  if (!entry) {
+    throw new Error("FAQ entry not found.");
+  }
+
+  await client.faqEntry.delete({ where: { id: entry.id } });
+  return { deleted: true };
 }

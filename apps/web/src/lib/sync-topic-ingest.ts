@@ -163,9 +163,11 @@ export async function formatKeptIngestForPrompt(
   }
 
   const lines: string[] = [
-    "TELEGRAM_INGEST (pre-fetched kept messages from the linked account; attribute as Telegram @peer; do not invent chats):",
+    "COMBINED_SOURCES — use BOTH web research (keywords above) AND the Telegram messages below.",
+    "Attribute Telegram lines as Telegram @peer (with link when present). Prefer concrete facts; ignore ads/fluff already filtered out.",
+    "TELEGRAM_INGEST (kept messages from the linked account; do not invent chats):",
   ];
-  let used = lines[0]!.length;
+  let used = lines.join("\n").length;
   for (const row of rows) {
     const peer = row.externalId.split(":")[0] ?? "unknown";
     const when = row.publishedAt ? row.publishedAt.toISOString().slice(0, 16) : "unknown-time";

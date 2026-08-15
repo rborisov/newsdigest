@@ -837,6 +837,28 @@ function TopicsSection({
   const [pending, setPending] = useState(false);
   const [generatePending, setGeneratePending] = useState(false);
   const [generateStatus, setGenerateStatus] = useState<string | null>(null);
+  const [ingestPending, setIngestPending] = useState(false);
+  const [ingestStatus, setIngestStatus] = useState<string | null>(null);
+  const [ingestQualityFilter, setIngestQualityFilter] = useState<"kept" | "all">("kept");
+  const [ingestItems, setIngestItems] = useState<
+    Array<{
+      id: string;
+      kind: string;
+      externalId: string;
+      url: string | null;
+      text: string;
+      publishedAt: string | null;
+      quality: string;
+    }>
+  >([]);
+  const [ingestCounts, setIngestCounts] = useState<{
+    total: number;
+    kept: number;
+    ads: number;
+    fluff: number;
+    question: number;
+    other: number;
+  } | null>(null);
   const [activeJob, setActiveJob] = useState<{ id: string; status: string } | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<"new" | string | null>(null);
   const leaveDialogResolver = useRef<((ok: boolean) => void) | null>(null);
@@ -885,6 +907,9 @@ function TopicsSection({
       setError(undefined);
       setFieldError(undefined);
       setGenerateStatus(null);
+      setIngestStatus(null);
+      setIngestItems([]);
+      setIngestCounts(null);
       if (next === "new") {
         const form = emptyForm();
         const nextSources = defaultTopicSources();
@@ -1200,6 +1225,78 @@ function TopicsSection({
     router.refresh();
   }
 
+  const loadIngestPreview = useCallback(async (topicId: string) => {
+    const result = await adminFetch(`/api/admin/topics/${topicId}/ingest`);
+    if (!result.ok) {
+      setIngestStatus(result.error);
+      return;
+    }
+    const data = result.data as {
+      counts: {
+        total: number;
+        kept: number;
+        ads: number;
+        fluff: number;
+        question: number;
+        other: number;
+      };
+      items: Array<{
+        id: string;
+        kind: string;
+        externalId: string;
+        url: string | null;
+        text: string;
+        publishedAt: string | null;
+        quality: string;
+      }>;
+    };
+    setIngestCounts(data.counts);
+    setIngestItems(data.items);
+    setIngestStatus(null);
+  }, []);
+
+  useEffect(() => {
+    if (selection === "new") {
+      return;
+    }
+    void loadIngestPreview(selection);
+  }, [selection, loadIngestPreview]);
+
+  async function syncIngest(topic: TopicRow) {
+    if (isDirty) {
+      setIngestStatus("Save topic changes before syncing Telegram.");
+      return;
+    }
+    const hasTelegram = (topic.sources ?? []).some(
+      (source) => source.kind === "telegram" && source.enabled,
+    );
+    if (!hasTelegram) {
+      setIngestStatus("Add an enabled Telegram source with peers first.");
+      return;
+    }
+    setIngestPending(true);
+    setIngestStatus(null);
+    setError(undefined);
+    const result = await adminFetch(`/api/admin/topics/${topic.id}/ingest`, { method: "POST" });
+    setIngestPending(false);
+    if (!result.ok) {
+      setIngestStatus(result.error);
+      return;
+    }
+    const data = result.data as {
+      sync?: { keptTotal?: number; sources?: Array<{ error: string | null }> };
+      kept?: number;
+    };
+    const errors = (data.sync?.sources ?? []).filter((source) => source.error).length;
+    setIngestStatus(
+      `Synced. Kept ${data.kept ?? data.sync?.keptTotal ?? 0} messages${
+        errors ? ` (${errors} source error${errors === 1 ? "" : "s"})` : ""
+      }. Review below before Generate.`,
+    );
+    await loadIngestPreview(topic.id);
+    router.refresh();
+  }
+
   async function generateTopic(topic: TopicRow) {
     if (activeJob || generatePending) {
       return;
@@ -1269,25 +1366,29 @@ function TopicsSection({
     font: "inherit",
   });
 
+  const hasEnabledTelegram = (selectedTopic?.sources ?? []).some(
+    (source) => source.kind === "telegram" && source.enabled,
+  );
   const generateBlockedReason = selectedTopic
     ? isDirty
       ? "Save changes before generating."
       : !selectedTopic.enabled
         ? "Enable the topic before generating."
-        : !selectedTopic.keywords.trim() &&
-            !(selectedTopic.sources ?? []).some((source) => source.kind === "telegram" && source.enabled)
+        : !selectedTopic.keywords.trim() && !hasEnabledTelegram
           ? "Add web keywords or an enabled Telegram source before generating."
-          : activeJob
-            ? `Job ${activeJob.id} in progress…`
-            : null
+          : hasEnabledTelegram && (ingestCounts?.kept ?? 0) === 0
+            ? "Sync Telegram and review kept messages below before generating."
+            : activeJob
+              ? `Job ${activeJob.id} in progress…`
+              : null
     : null;
 
   return (
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Topics</h2>
       <p style={{ margin: "0.5rem 0 0", color: "#555", fontSize: "0.95rem" }}>
-        Pick a topic to edit, or add a new one. Configure web and/or Telegram sources. Generate syncs Telegram
-        peers into ingest before the agent runs.
+        Pick a topic to edit, or add a new one. For Telegram peers: Sync and review kept messages, then
+        Generate (combined web + Telegram digest).
       </p>
 
       <div
@@ -1515,8 +1616,7 @@ function TopicsSection({
                         }}
                       />
                       <span style={{ color: "#666", fontSize: "0.85rem" }}>
-                        Group/channel usernames. Uses the linked Telegram account (API keys). Synced on
-                        Generate into filtered ingest for the agent.
+                        Group/channel usernames. Use Sync Telegram below to fetch and review before Generate.
                         {source.lastSyncAt
                           ? ` Last sync: ${new Date(source.lastSyncAt).toLocaleString()}.`
                           : ""}
@@ -1580,6 +1680,15 @@ function TopicsSection({
                   </button>
                   <button
                     type="button"
+                    disabled={pending || ingestPending || isDirty}
+                    style={buttonStyle}
+                    title={isDirty ? "Save changes first" : undefined}
+                    onClick={() => void syncIngest(selectedTopic)}
+                  >
+                    {ingestPending ? "Syncing…" : "Sync Telegram"}
+                  </button>
+                  <button
+                    type="button"
                     disabled={Boolean(generateBlockedReason) || generatePending}
                     style={buttonStyle}
                     title={generateBlockedReason ?? undefined}
@@ -1591,6 +1700,94 @@ function TopicsSection({
               ) : null}
             </div>
           </form>
+
+          {selectedTopic && hasEnabledTelegram ? (
+            <div style={{ marginTop: "1.5rem", borderTop: "1px solid #ddd", paddingTop: "1rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "0.75rem",
+                  alignItems: "center",
+                  marginBottom: "0.75rem",
+                }}
+              >
+                <h3 style={{ ...headingStyle, margin: 0 }}>Telegram ingest</h3>
+                <label style={{ fontSize: "0.9rem", display: "flex", gap: "0.35rem", alignItems: "center" }}>
+                  Show
+                  <select
+                    value={ingestQualityFilter}
+                    onChange={(event) => setIngestQualityFilter(event.target.value as "kept" | "all")}
+                    style={inputStyle}
+                  >
+                    <option value="kept">kept only</option>
+                    <option value="all">all qualities</option>
+                  </select>
+                </label>
+                {ingestCounts ? (
+                  <span style={{ color: "#666", fontSize: "0.85rem" }}>
+                    kept {ingestCounts.kept} · ads {ingestCounts.ads} · fluff {ingestCounts.fluff} ·
+                    questions {ingestCounts.question} · other {ingestCounts.other}
+                  </span>
+                ) : null}
+              </div>
+              {ingestStatus ? <p style={messageStyle}>{ingestStatus}</p> : null}
+              {ingestItems.length === 0 ? (
+                <p style={{ color: "#666", fontSize: "0.9rem" }}>
+                  No ingest rows yet. Click Sync Telegram to fetch peers (requires a linked account under API
+                  keys).
+                </p>
+              ) : (
+                <ul
+                  style={{
+                    listStyle: "none",
+                    margin: 0,
+                    padding: 0,
+                    maxHeight: "22rem",
+                    overflow: "auto",
+                    border: "1px solid #eee",
+                  }}
+                >
+                  {ingestItems
+                    .filter((item) =>
+                      ingestQualityFilter === "kept" ? item.quality === "kept" : true,
+                    )
+                    .map((item) => {
+                      const peer = item.externalId.split(":")[0] ?? "?";
+                      return (
+                        <li
+                          key={item.id}
+                          style={{
+                            padding: "0.55rem 0.65rem",
+                            borderBottom: "1px solid #f0f0f0",
+                            fontSize: "0.88rem",
+                          }}
+                        >
+                          <div style={{ color: "#666", marginBottom: "0.2rem" }}>
+                            @{peer}
+                            {item.publishedAt
+                              ? ` · ${new Date(item.publishedAt).toLocaleString()}`
+                              : ""}
+                            {` · ${item.quality}`}
+                            {item.url ? (
+                              <>
+                                {" · "}
+                                <a href={item.url} target="_blank" rel="noreferrer">
+                                  open
+                                </a>
+                              </>
+                            ) : null}
+                          </div>
+                          <div style={{ whiteSpace: "pre-wrap" }}>
+                            {item.text.trim() || "(empty / media-only)"}
+                          </div>
+                        </li>
+                      );
+                    })}
+                </ul>
+              )}
+            </div>
+          ) : null}
 
           {leaveTarget != null ? (
             <div

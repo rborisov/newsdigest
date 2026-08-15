@@ -69,63 +69,70 @@ export function HomeTopicsNav({ nav, indexUrl, displayTimezone }: Props) {
         aria-hidden={isMobile && !open}
       >
         <div className="home-sidebar-inner">
-          <div className="topics-menu-head">
-            <h2 className="home-sidebar-title">Topics</h2>
-            <button
-              type="button"
-              className="topics-menu-close"
-              aria-label="Close topics menu"
-              onClick={close}
-            >
-              ×
-            </button>
-          </div>
-          {indexUrl ? (
-            <a
-              className="index-link index-link-sidebar"
-              href={indexUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={close}
-            >
-              Telegra.ph index →
-            </a>
-          ) : null}
-          {nav.length === 0 ? (
-            <p className="muted">No cached topics yet.</p>
-          ) : (
-            <ul className="topic-nav">
-              {nav.map((item) => {
-                const tags = digestListTags({
-                  title: item.title,
-                  storyTitles: item.storyTitles,
-                });
-                return (
-                  <li key={item.topicId}>
-                    <a
-                      className="topic-nav-item"
-                      href={`#topic-${item.topicId}`}
-                      onClick={close}
-                    >
-                      <span className="digest-time">
-                        {formatDigestWhen(item.publishedAt, displayTimezone)}
-                      </span>
-                      <span className="topic-nav-name">{item.topicName}</span>
-                      {tags.length > 0 ? (
-                        <span className="tag-row">
-                          {tags.slice(0, 3).map((tag) => (
-                            <span key={tag} className="tag">
-                              {tag}
-                            </span>
-                          ))}
-                        </span>
-                      ) : null}
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <section className="panel home-board home-sidebar-board">
+            <div className="topics-menu-head">
+              <h2>Topics</h2>
+              <button
+                type="button"
+                className="topics-menu-close"
+                aria-label="Close topics menu"
+                onClick={close}
+              >
+                ×
+              </button>
+            </div>
+            {indexUrl ? (
+              <a
+                className="index-link index-link-sidebar"
+                href={indexUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={close}
+              >
+                Telegra.ph index →
+              </a>
+            ) : null}
+            {nav.length === 0 ? (
+              <p className="muted">No cached topics yet.</p>
+            ) : (
+              <ul className="board-list topic-nav">
+                {nav.map((item) => {
+                  const tags = digestListTags({
+                    title: item.title,
+                    storyTitles: item.storyTitles,
+                  });
+                  return (
+                    <li key={item.topicId}>
+                      <a
+                        className="board-card topic-nav-item"
+                        href={`#topic-${item.topicId}`}
+                        onClick={close}
+                      >
+                        <div className="board-card-header">
+                          <span className="board-topic topic-nav-name">{item.topicName}</span>
+                          <time
+                            className="digest-time"
+                            dateTime={item.publishedAt.toISOString()}
+                          >
+                            {formatDigestWhen(item.publishedAt, displayTimezone)}
+                          </time>
+                        </div>
+                        {tags.length > 0 ? (
+                          <div className="tag-row">
+                            {tags.slice(0, 3).map((tag) => (
+                              <span key={tag} className="tag">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
       </aside>
     </>

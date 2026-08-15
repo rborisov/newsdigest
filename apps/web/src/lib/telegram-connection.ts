@@ -468,6 +468,15 @@ export async function submitTelegramPassword(passwordRaw: string): Promise<Publi
     return await finalizeLinked(client, existing.linkedBy);
   } catch (err) {
     const message = rpcMessage(err);
+    // Keep mid-login so the user can retry the password; wrong password must not wipe the step.
+    if (message === "PASSWORD_HASH_INVALID") {
+      const row = await upsertTelegramRow({
+        status: "linking",
+        lastError:
+          "Wrong cloud password (Two-Step Verification). Try again, or Cancel and in Telegram go to Settings → Devices and reset the incomplete login.",
+      });
+      return toPublicConnection(row);
+    }
     await upsertTelegramRow({
       status: "error",
       lastError: message,
@@ -510,6 +519,30 @@ export async function cancelTelegramLink(): Promise<PublicSocialConnection> {
   if (!existing) {
     return (await getTelegramConnectionPublic()).connection;
   }
+
+  // Best-effort: cancel the in-flight Telegram login so new codes can be sent again.
+  const state = parseLinkState(existing.linkStateEnc);
+  const cfg = await resolveTelegramApiConfigAsync();
+  if (state?.session && state.phone && state.phoneCodeHash && cfg) {
+    let client: TeleprotoClient | null = null;
+    try {
+      const { Api } = loadTeleproto();
+      client = await createClient(state.session, cfg);
+      await client.invoke(
+        new Api.auth.CancelCode({
+          phoneNumber: state.phone,
+          phoneCodeHash: state.phoneCodeHash,
+        }),
+      );
+    } catch {
+      // Telegram may already have expired the attempt; local clear still helps.
+    } finally {
+      if (client) {
+        await client.disconnect().catch(() => undefined);
+      }
+    }
+  }
+
   const keepLinked = existing.status === "linked" && existing.sessionEnc.trim().length > 0;
   const row = await upsertTelegramRow({
     status: keepLinked ? "linked" : "disconnected",

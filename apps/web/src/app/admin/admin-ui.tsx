@@ -2471,8 +2471,10 @@ function ConnectionsSection({
 
   const linked = connection.status === "linked";
   const linking = connection.status === "linking";
+  const errored = connection.status === "error";
   const awaitingCode = linking && connection.linkStep === "awaiting_code";
   const awaitingPassword = linking && connection.linkStep === "awaiting_password";
+  const canStartOver = !linked && (linking || errored);
 
   return (
     <section style={sectionStyle}>
@@ -2579,16 +2581,23 @@ function ConnectionsSection({
         ) : null}
 
         {awaitingPassword ? (
-          <label style={fieldStyle}>
-            2FA password{connection.passwordHint ? ` (hint: ${connection.passwordHint})` : ""}
-            <input
-              style={inputStyle}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={busy}
-            />
-          </label>
+          <>
+            <p style={{ margin: 0, fontSize: "0.875rem", color: "#555" }}>
+              This Telegram account has Two-Step Verification (cloud password). The login code was already
+              accepted — enter that password here. If codes stop arriving after a wrong password, open Telegram →
+              Settings → Devices, reset the incomplete login, then Cancel below and start again.
+            </p>
+            <label style={fieldStyle}>
+              Cloud password (2FA){connection.passwordHint ? ` (hint: ${connection.passwordHint})` : ""}
+              <input
+                style={inputStyle}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={busy}
+              />
+            </label>
+          </>
         ) : null}
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -2619,17 +2628,23 @@ function ConnectionsSection({
               disabled={busy || !password}
               onClick={() => void run("/api/admin/connections/telegram/password", { password })}
             >
-              Submit 2FA
+              Submit cloud password
             </button>
           ) : null}
-          {linking ? (
+          {canStartOver ? (
             <button
               type="button"
               style={buttonStyle}
               disabled={busy}
-              onClick={() => void run("/api/admin/connections/telegram/cancel", undefined, "Link cancelled.")}
+              onClick={() =>
+                void run(
+                  "/api/admin/connections/telegram/cancel",
+                  undefined,
+                  "Link cancelled. If Telegram still blocks codes, reset the incomplete login under Settings → Devices.",
+                )
+              }
             >
-              Cancel
+              Cancel / start over
             </button>
           ) : null}
           {linked ? (

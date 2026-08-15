@@ -1,7 +1,7 @@
-import { Api, TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
-import { computeCheck } from "telegram/Password";
-import { LogLevel } from "telegram/extensions/Logger";
+import { Api, TelegramClient } from "teleproto";
+import { StringSession } from "teleproto/sessions";
+import { computeCheck } from "teleproto/Password";
+import { LogLevel } from "teleproto/extensions/Logger";
 
 import { decryptSecret, encryptSecret } from "@/lib/connection-secrets";
 import { prisma } from "@/lib/db";
@@ -126,7 +126,6 @@ function rpcMessage(err: unknown): string {
 async function createClient(sessionString: string, cfg: TelegramApiConfig): Promise<TelegramClient> {
   const client = new TelegramClient(new StringSession(sessionString), cfg.apiId, cfg.apiHash, {
     connectionRetries: 3,
-    useWSS: false,
   });
   client.setLogLevel(LogLevel.NONE);
   await client.connect();

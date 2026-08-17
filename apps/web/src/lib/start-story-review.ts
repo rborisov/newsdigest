@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import { tryAcquireAgentMutex } from "@/lib/agent-mutex";
 import { spawnAgentBackend } from "@/lib/agent-backend";
+import { reconcileAbandonedStoryReviews } from "@/lib/job-reconciliation";
 import {
   applyReviewPromptPlaceholders,
   buildStoryReviewAgentPrompt,
@@ -23,6 +24,8 @@ export async function startStoryReview(
   prisma: PrismaClient,
   input: StartStoryReviewInput,
 ): Promise<StartStoryReviewResult> {
+  await reconcileAbandonedStoryReviews(prisma);
+
   const story = await prisma.storyIndex.findUnique({
     where: { id: input.storyIndexId },
     include: {

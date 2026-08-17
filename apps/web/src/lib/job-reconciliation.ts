@@ -9,8 +9,16 @@ export const STALE_RUNNING_JOB_MAX_AGE_MS = 30 * 60 * 1000;
 export const STALE_JOB_ERROR =
   "Job timed out: still marked running after 30 minutes with no completion.";
 
+export const STALE_REVIEW_ERROR =
+  "Review timed out: still marked running after 30 minutes with no publish.";
+
 export const AGENT_EXITED_WITHOUT_COMPLETION =
   "Agent exited without completing this step (job was still marked running).";
+
+export const REVIEW_AGENT_EXITED_WITHOUT_PUBLISH =
+  "Agent exited without publishing a review (review was still marked running).";
+
+const RUNNING_REVIEW_STATUSES = ["pending", "running"] as const;
 
 export function isStaleRunningJob(
   updatedAt: Date,
@@ -126,5 +134,95 @@ export async function reconcileAbandonedJobs(
 ): Promise<number> {
   const stale = await reconcileStaleRunningJobs(db, options);
   const exited = await reconcileExitedButRunningJobs(db);
+  return stale + exited;
+}
+
+async function failStoryReviewsByIds(
+  db: PrismaClient,
+  ids: string[],
+  error: string,
+): Promise<number> {
+  if (ids.length === 0) {
+    return 0;
+  }
+
+  await db.storyReview.updateMany({
+    where: { id: { in: ids } },
+    data: { status: "failed", error },
+  });
+
+  return ids.length;
+}
+
+/**
+ * Fail story reviews stuck in pending/running (detached agent never reconciled).
+ */
+export async function reconcileStaleRunningStoryReviews(
+  db: PrismaClient = defaultPrisma,
+  options?: { now?: Date; maxAgeMs?: number },
+): Promise<number> {
+  const now = options?.now ?? new Date();
+  const maxAgeMs = options?.maxAgeMs ?? STALE_RUNNING_JOB_MAX_AGE_MS;
+  const cutoff = new Date(now.getTime() - maxAgeMs);
+
+  const stale = await db.storyReview.findMany({
+    where: {
+      status: { in: [...RUNNING_REVIEW_STATUSES] },
+      updatedAt: { lte: cutoff },
+    },
+    select: { id: true },
+  });
+
+  return failStoryReviewsByIds(
+    db,
+    stale.map((row) => row.id),
+    STALE_REVIEW_ERROR,
+  );
+}
+
+/**
+ * Fail (or recover) story reviews whose agent log shows exit but DB still running.
+ */
+export async function reconcileExitedButRunningStoryReviews(
+  db: PrismaClient = defaultPrisma,
+): Promise<number> {
+  const running = await db.storyReview.findMany({
+    where: { status: { in: [...RUNNING_REVIEW_STATUSES] } },
+    select: { id: true, telegraphUrl: true },
+  });
+
+  let changed = 0;
+  for (const review of running) {
+    const log = readJobLogTail(review.id, 40);
+    if (!logShowsAgentExited(log)) {
+      continue;
+    }
+
+    if (review.telegraphUrl.trim()) {
+      await db.storyReview.update({
+        where: { id: review.id },
+        data: { status: "published", error: null },
+      });
+      changed += 1;
+      continue;
+    }
+
+    await db.storyReview.update({
+      where: { id: review.id },
+      data: { status: "failed", error: REVIEW_AGENT_EXITED_WITHOUT_PUBLISH },
+    });
+    changed += 1;
+  }
+
+  return changed;
+}
+
+/** Run story review cleanups before start/poll. */
+export async function reconcileAbandonedStoryReviews(
+  db: PrismaClient = defaultPrisma,
+  options?: { now?: Date; maxAgeMs?: number },
+): Promise<number> {
+  const stale = await reconcileStaleRunningStoryReviews(db, options);
+  const exited = await reconcileExitedButRunningStoryReviews(db);
   return stale + exited;
 }

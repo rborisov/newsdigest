@@ -12,6 +12,7 @@ import { sanitizeDigestHtml, stripLeadingTopicHeading } from "@/lib/sanitize-dig
 import { HomeTopicsNav } from "@/app/home-topics-nav";
 import { loadTopicBoard } from "@/lib/topic-board";
 import { loadStoryReviewsForHtml } from "@/lib/load-story-reviews";
+import { reconcileAbandonedStoryReviews } from "@/lib/job-reconciliation";
 import { enrichBoardHtmlWithReviewLinks } from "@/lib/story-review";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ export default async function HomePage() {
   const rawHtmlChunks = board.map((card) =>
     layoutBoardStoryBlocks(stripLeadingTopicHeading(card.htmlContent, card.topicName)),
   );
+  await reconcileAbandonedStoryReviews(prisma);
   const reviewsByStoryId = await loadStoryReviewsForHtml(prisma, rawHtmlChunks);
 
   return (

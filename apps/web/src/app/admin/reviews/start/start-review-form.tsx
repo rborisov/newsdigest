@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Props = {
   storyId: string;
@@ -13,6 +13,12 @@ type Props = {
   reviewStatus: string | null;
   reviewError: string | null;
   reviewUrl: string | null;
+};
+
+type ReviewPoll = {
+  status: string;
+  error: string | null;
+  telegraphUrl: string;
 };
 
 async function postReview(storyId: string, prompt: string): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -28,21 +34,75 @@ async function postReview(storyId: string, prompt: string): Promise<{ ok: true }
   return { ok: true };
 }
 
+async function fetchReviewStatus(storyId: string): Promise<ReviewPoll | null> {
+  const response = await fetch(`/api/admin/reviews?storyId=${encodeURIComponent(storyId)}`, {
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    review?: { status: string; error: string | null; telegraphUrl: string };
+  };
+  if (!response.ok || !data.review) {
+    return null;
+  }
+  return data.review;
+}
+
 export function StartReviewForm({
   storyId,
   storyTitle,
   storyUrl,
   topicName,
   initialPrompt,
-  reviewStatus,
-  reviewError,
-  reviewUrl,
+  reviewStatus: initialReviewStatus,
+  reviewError: initialReviewError,
+  reviewUrl: initialReviewUrl,
 }: Props) {
   const router = useRouter();
   const [prompt, setPrompt] = useState(initialPrompt);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<string>();
+  const [reviewStatus, setReviewStatus] = useState(initialReviewStatus);
+  const [reviewError, setReviewError] = useState(initialReviewError);
+  const [reviewUrl, setReviewUrl] = useState(initialReviewUrl);
+
+  useEffect(() => {
+    setReviewStatus(initialReviewStatus);
+    setReviewError(initialReviewError);
+    setReviewUrl(initialReviewUrl);
+  }, [initialReviewStatus, initialReviewError, initialReviewUrl]);
+
+  const running = reviewStatus === "running" || reviewStatus === "pending";
+
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function poll() {
+      const review = await fetchReviewStatus(storyId);
+      if (cancelled || !review) {
+        return;
+      }
+
+      setReviewStatus(review.status);
+      setReviewError(review.error);
+      setReviewUrl(review.telegraphUrl || null);
+
+      if (review.status === "published" || review.status === "failed") {
+        router.refresh();
+      }
+    }
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [running, router, storyId]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -58,11 +118,11 @@ export function StartReviewForm({
       return;
     }
 
-    setMessage("Review agent started. Return to the home board to watch progress.");
+    setReviewStatus("running");
+    setReviewError(null);
+    setMessage("Review agent started. This page updates when publish finishes or the run fails.");
     router.refresh();
   }
-
-  const running = reviewStatus === "running" || reviewStatus === "pending";
 
   return (
     <div className="panel" style={{ maxWidth: "48rem", margin: "2rem auto", padding: "1.5rem" }}>
@@ -95,6 +155,8 @@ export function StartReviewForm({
             <span className="muted">(none)</span>
           )}
         </dd>
+        <dt className="muted">Status</dt>
+        <dd style={{ margin: 0 }}>{reviewStatus ?? "none"}</dd>
       </dl>
 
       {reviewStatus === "published" && reviewUrl ? (
@@ -111,7 +173,10 @@ export function StartReviewForm({
       ) : null}
 
       {running ? (
-        <p className="muted">A review is already in progress for this story.</p>
+        <p className="muted">
+          Review in progress… this page checks every 5s. When the run finishes, status updates here and on
+          the home board.
+        </p>
       ) : (
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>

@@ -62,6 +62,29 @@ export async function POST(request: Request) {
       appendJobLogLine(jobId, "agent-exited recovered story review: telegraphUrl present");
       return NextResponse.json({ ok: true, recovered: true, kind: "story_review" });
     }
+
+    // Publish/index can finish shortly after the agent process exits.
+    await sleep(12_000);
+
+    const afterWait = await prisma.storyReview.findUnique({
+      where: { id: jobId },
+      select: { status: true, telegraphUrl: true },
+    });
+    if (
+      afterWait?.status === "published" ||
+      (afterWait?.telegraphUrl && afterWait.telegraphUrl.trim())
+    ) {
+      if (afterWait.status !== "published") {
+        await prisma.storyReview.update({
+          where: { id: jobId },
+          data: { status: "published", error: null },
+        });
+      }
+      releaseAgentMutexBestEffort();
+      appendJobLogLine(jobId, "agent-exited recovered story review after wait");
+      return NextResponse.json({ ok: true, recovered: true, kind: "story_review" });
+    }
+
     const code = exitCode;
     await prisma.storyReview.update({
       where: { id: jobId },

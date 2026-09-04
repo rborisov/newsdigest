@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, afterEach } from "node:test";
@@ -215,10 +214,60 @@ describe("job-reconciliation", () => {
         storyReview: {
           findMany: async () => [],
           updateMany: async () => ({ count: 0 }),
+          count: async () => 0,
+        },
+        generationJob: {
+          count: async () => 0,
         },
       };
       const count = await reconcileAbandonedStoryReviews(mockDb as never);
       assert.equal(count, 0);
+    });
+  });
+
+  describe("releaseOrphanAgentMutexIfIdle", () => {
+    it("releases when no active jobs or reviews", async () => {
+      const prior = process.env.AGENT_MUTEX_PATH;
+      const dir = mkdtempSync(join(tmpdir(), "nd-mutex-"));
+      const lockPath = join(dir, "cursor-agent.lock");
+      process.env.AGENT_MUTEX_PATH = lockPath;
+      writeFileSync(lockPath, JSON.stringify({ holder: "stale" }), "utf8");
+
+      try {
+        const { releaseOrphanAgentMutexIfIdle } = await import("./job-reconciliation");
+        const mockDb = {
+          generationJob: { count: async () => 0 },
+          storyReview: { count: async () => 0 },
+        };
+        const released = await releaseOrphanAgentMutexIfIdle(mockDb as never);
+        assert.equal(released, true);
+        assert.equal(existsSync(lockPath), false);
+      } finally {
+        if (prior === undefined) delete process.env.AGENT_MUTEX_PATH;
+        else process.env.AGENT_MUTEX_PATH = prior;
+      }
+    });
+
+    it("keeps lock when a job is still active", async () => {
+      const prior = process.env.AGENT_MUTEX_PATH;
+      const dir = mkdtempSync(join(tmpdir(), "nd-mutex-"));
+      const lockPath = join(dir, "cursor-agent.lock");
+      process.env.AGENT_MUTEX_PATH = lockPath;
+      writeFileSync(lockPath, JSON.stringify({ holder: "active" }), "utf8");
+
+      try {
+        const { releaseOrphanAgentMutexIfIdle } = await import("./job-reconciliation");
+        const mockDb = {
+          generationJob: { count: async () => 1 },
+          storyReview: { count: async () => 0 },
+        };
+        const released = await releaseOrphanAgentMutexIfIdle(mockDb as never);
+        assert.equal(released, false);
+        assert.equal(existsSync(lockPath), true);
+      } finally {
+        if (prior === undefined) delete process.env.AGENT_MUTEX_PATH;
+        else process.env.AGENT_MUTEX_PATH = prior;
+      }
     });
   });
 });

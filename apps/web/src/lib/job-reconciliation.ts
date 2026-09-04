@@ -1,5 +1,6 @@
 import { GenerationJobStatus, GenerationStepStatus, PrismaClient } from "@prisma/client";
 
+import { releaseAgentMutexBestEffort } from "./agent-mutex";
 import { prisma as defaultPrisma } from "./db";
 import { readJobLogTail } from "./job-logs";
 
@@ -32,6 +33,32 @@ export function logShowsAgentExited(logTail: string): boolean {
   return /agent exited with code=\d+/i.test(logTail);
 }
 
+/**
+ * Drop the host agent lock when nothing in DB still needs it.
+ * Covers the case where reconciliation failed jobs earlier but left the lock file.
+ */
+export async function releaseOrphanAgentMutexIfIdle(
+  db: PrismaClient = defaultPrisma,
+): Promise<boolean> {
+  const [activeJobs, activeReviews] = await Promise.all([
+    db.generationJob.count({
+      where: {
+        status: { in: [GenerationJobStatus.pending, GenerationJobStatus.running] },
+      },
+    }),
+    db.storyReview.count({
+      where: { status: { in: [...RUNNING_REVIEW_STATUSES] } },
+    }),
+  ]);
+
+  if (activeJobs > 0 || activeReviews > 0) {
+    return false;
+  }
+
+  releaseAgentMutexBestEffort();
+  return true;
+}
+
 async function failJobsByIds(
   db: PrismaClient,
   ids: string[],
@@ -61,6 +88,7 @@ async function failJobsByIds(
     }),
   ]);
 
+  releaseAgentMutexBestEffort();
   return ids.length;
 }
 
@@ -134,6 +162,7 @@ export async function reconcileAbandonedJobs(
 ): Promise<number> {
   const stale = await reconcileStaleRunningJobs(db, options);
   const exited = await reconcileExitedButRunningJobs(db);
+  await releaseOrphanAgentMutexIfIdle(db);
   return stale + exited;
 }
 
@@ -151,6 +180,7 @@ async function failStoryReviewsByIds(
     data: { status: "failed", error },
   });
 
+  releaseAgentMutexBestEffort();
   return ids.length;
 }
 
@@ -214,6 +244,10 @@ export async function reconcileExitedButRunningStoryReviews(
     changed += 1;
   }
 
+  if (changed > 0) {
+    releaseAgentMutexBestEffort();
+  }
+
   return changed;
 }
 
@@ -224,5 +258,6 @@ export async function reconcileAbandonedStoryReviews(
 ): Promise<number> {
   const stale = await reconcileStaleRunningStoryReviews(db, options);
   const exited = await reconcileExitedButRunningStoryReviews(db);
+  await releaseOrphanAgentMutexIfIdle(db);
   return stale + exited;
 }

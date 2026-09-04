@@ -30,7 +30,7 @@ describe("schedule-human", () => {
         timeOfDay: "09:30",
         intervalHours: 5,
       }),
-      { ok: true, cronExpr: "30 9/5 * * *" },
+      { ok: true, cronExpr: "30 9,14,19 * * *" },
     );
   });
 
@@ -77,6 +77,12 @@ describe("schedule-human", () => {
       intervalHours: null,
     });
     assert.deepEqual(inferHumanFromCron("30 9/5 * * *"), {
+      recurrence: "interval_hours",
+      timeOfDay: "09:30",
+      weekday: null,
+      intervalHours: 5,
+    });
+    assert.deepEqual(inferHumanFromCron("30 9,14,19 * * *"), {
       recurrence: "interval_hours",
       timeOfDay: "09:30",
       weekday: null,

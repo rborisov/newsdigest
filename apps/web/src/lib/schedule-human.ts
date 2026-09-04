@@ -71,10 +71,15 @@ export function compileCronExpr(input: HumanScheduleInput):
     if (hours == null || !Number.isInteger(hours) || hours < 1 || hours > 24) {
       return { ok: false, error: "Interval must be an integer from 1 to 24 hours." };
     }
-    // Align to start hour, then every N hours (e.g. 09:30 every 5h → 9:30, 14:30, 19:30…)
+    // Explicit hour list — node-cron rejects "9/5" (needs range like 9-23/5).
+    // Align to start hour, then every N hours within the same day (09:30 / 5h → 9,14,19).
+    const hourList: number[] = [];
+    for (let hour = time.hour; hour < 24; hour += hours) {
+      hourList.push(hour);
+    }
     return {
       ok: true,
-      cronExpr: `${time.minute} ${time.hour}/${hours} * * *`,
+      cronExpr: `${time.minute} ${hourList.join(",")} * * *`,
     };
   }
 
@@ -116,6 +121,28 @@ export function inferHumanFromCron(cronExpr: string): HumanScheduleInput | null 
       weekday: null,
       intervalHours,
     };
+  }
+
+  // Comma hour list from compileCronExpr interval_hours (e.g. "9,14,19")
+  if (dow === "*" && /^\d{1,2}(,\d{1,2})+$/.test(hourRaw)) {
+    const hours = hourRaw.split(",").map((part) => Number(part));
+    if (
+      hours.length >= 2 &&
+      hours.every((hour) => Number.isInteger(hour) && hour >= 0 && hour <= 23)
+    ) {
+      const step = hours[1]! - hours[0]!;
+      const isRegular =
+        step >= 1 &&
+        hours.every((hour, index) => hour === hours[0]! + index * step);
+      if (isRegular) {
+        return {
+          recurrence: "interval_hours",
+          timeOfDay: formatTimeOfDay(hours[0]!, minute),
+          weekday: null,
+          intervalHours: step,
+        };
+      }
+    }
   }
 
   const hour = Number(hourRaw);

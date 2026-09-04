@@ -105,7 +105,11 @@ export function buildAuthProvidersFromResolved(
         clientSecret: row.clientSecret,
         ...linkSameEmail,
         authorization: {
-          params: { scope: row.scopes || "openid email profile" },
+          params: {
+            scope: row.scopes || "openid email profile",
+            // Force the IdP to re-authenticate instead of silent SSO.
+            prompt: "login",
+          },
         },
         client: {
           token_endpoint_auth_method: row.tokenAuthMethod || "client_secret_post",

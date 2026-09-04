@@ -63,6 +63,11 @@ describe("auth-providers", () => {
     assert.equal(provider.id, "company");
     assert.equal(provider.type, "oidc");
     assert.equal(provider.allowDangerousEmailAccountLinking, true);
+    assert.equal(
+      (provider as { authorization?: { params?: { prompt?: string } } }).authorization
+        ?.params?.prompt,
+      "login",
+    );
   });
 
   it("builds callback URLs", () => {

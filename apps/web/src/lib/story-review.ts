@@ -145,6 +145,105 @@ export type ReviewLinkInfo = {
   telegraphUrl: string;
 };
 
+const BOARD_STORY_OPEN = '<div class="board-story">';
+
+function findMatchingDivEnd(html: string, start: number): number {
+  let depth = 0;
+  const divRe = /<\/?div\b[^>]*>/gi;
+  divRe.lastIndex = start;
+  let match: RegExpExecArray | null;
+  while ((match = divRe.exec(html)) !== null) {
+    if (match[0].startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) {
+        return match.index + match[0].length;
+      }
+    } else {
+      depth += 1;
+    }
+  }
+  return -1;
+}
+
+/** True if `offset` sits inside an open `<div class="board-story…">` block. */
+function isInsideBoardStory(html: string, offset: number): boolean {
+  let i = 0;
+  while (i < offset) {
+    const start = html.indexOf('<div class="board-story', i);
+    if (start === -1 || start >= offset) {
+      return false;
+    }
+    const end = findMatchingDivEnd(html, start);
+    if (end === -1) {
+      return true;
+    }
+    if (offset > start && offset < end) {
+      return true;
+    }
+    i = end;
+  }
+  return false;
+}
+
+/** Mark story containers that contain a published review link. */
+export function markReviewedStoryContainers(html: string): string {
+  if (!html.includes("story-review-link")) {
+    return html;
+  }
+
+  let result = "";
+  let i = 0;
+  while (i < html.length) {
+    const start = html.indexOf(BOARD_STORY_OPEN, i);
+    if (start === -1) {
+      result += html.slice(i);
+      break;
+    }
+    result += html.slice(i, start);
+
+    const end = findMatchingDivEnd(html, start);
+    if (end === -1) {
+      result += html.slice(start);
+      break;
+    }
+
+    const block = html.slice(start, end);
+    if (block.includes("story-review-link")) {
+      result += block.replace(
+        BOARD_STORY_OPEN,
+        '<div class="board-story board-story--reviewed">',
+      );
+    } else {
+      result += block;
+    }
+    i = end;
+  }
+
+  // Bare paragraphs (outside board-story) that include a review link.
+  return result.replace(
+    /<p(\s[^>]*)?>((?:(?!<\/p>)[\s\S])*?story-review-link(?:(?!<\/p>)[\s\S])*?)<\/p>/gi,
+    (full, attrs: string | undefined, inner: string, offset: number) => {
+      if (isInsideBoardStory(result, offset)) {
+        return full;
+      }
+      const attr = attrs ?? "";
+      if (
+        /\bclass\s*=\s*["'][^"']*\bboard-story-item--reviewed\b/i.test(attr)
+      ) {
+        return full;
+      }
+      if (/\bclass\s*=\s*["']/i.test(attr)) {
+        return `<p${attr.replace(
+          /\bclass\s*=\s*(["'])([^"']*)\1/i,
+          (_m, q: string, cls: string) =>
+            `class=${q}${cls} board-story-item--reviewed${q}`,
+        )}>${inner}</p>`;
+      }
+      return `<p class="board-story-item--reviewed"${attr}>${inner}</p>`;
+    },
+  );
+}
+
 export function enrichBoardHtmlWithReviewLinks(
   html: string,
   reviewsByStoryId: Map<string, ReviewLinkInfo>,
@@ -154,7 +253,7 @@ export function enrichBoardHtmlWithReviewLinks(
     return html;
   }
 
-  return html.replace(STORY_ID_SUFFIX_RE, (match, storyId: string) => {
+  const withLinks = html.replace(STORY_ID_SUFFIX_RE, (match, storyId: string) => {
     const review = reviewsByStoryId.get(storyId);
     const published =
       review?.status === "published" && Boolean(review.telegraphUrl.trim());
@@ -182,4 +281,6 @@ export function enrichBoardHtmlWithReviewLinks(
 
     return `${match}${adminStartReviewLink(storyId, "Review")}`;
   });
+
+  return markReviewedStoryContainers(withLinks);
 }

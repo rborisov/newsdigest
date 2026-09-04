@@ -50,7 +50,27 @@ describe("story-review", () => {
     const enriched = enrichBoardHtmlWithReviewLinks(html, map, { isAdmin: false });
     assert.match(enriched, /Review →/);
     assert.match(enriched, /telegra\.ph/);
+    assert.match(enriched, /board-story-item--reviewed/);
     assert.doesNotMatch(enriched, /cpub0000000000000000001/);
+  });
+
+  it("marks board-story wrappers when a review is published", () => {
+    const html =
+      '<div class="board-story"><div class="board-story-text"><p>Story · cpub0000000000000000001</p></div></div>';
+    const map = new Map([
+      [
+        "cpub0000000000000000001",
+        {
+          storyIndexId: "cpub0000000000000000001",
+          status: "published",
+          telegraphUrl: "https://telegra.ph/Review-08-14",
+        },
+      ],
+    ]);
+    const enriched = enrichBoardHtmlWithReviewLinks(html, map, { isAdmin: false });
+    assert.match(enriched, /board-story board-story--reviewed/);
+    assert.match(enriched, /Review →/);
+    assert.doesNotMatch(enriched, /board-story-item--reviewed/);
   });
 
   it("hides in-progress reviews from regular users", () => {

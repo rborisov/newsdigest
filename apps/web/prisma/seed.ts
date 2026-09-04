@@ -136,16 +136,7 @@ If this fits a channel, newsroom, research team, or corporate monitoring need, r
     },
   });
 
-  for (const id of ["oidc", "google", "yandex"] as const) {
-    await prisma.authProvider.upsert({
-      where: { id },
-      update: {},
-      create: {
-        id,
-        providerId: id === "oidc" ? "oidc" : id,
-      },
-    });
-  }
+  // No fixed AuthProvider seed — configure issuers in Admin → Sign-in (or OIDC_* env bootstrap).
 }
 
 main()

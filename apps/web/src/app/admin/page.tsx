@@ -1,6 +1,6 @@
 import { AdminClient } from "@/app/admin/admin-ui";
 import { requireAdmin } from "@/lib/require-admin";
-import { listPublicAuthProviderRows, ensureAuthProviderRows } from "@/lib/auth-settings";
+import { listPublicAuthProviderRows, migrateAuthProviderRows } from "@/lib/auth-settings";
 import { prisma } from "@/lib/db";
 import { DEFAULT_REVIEW_TEMPLATE } from "@/lib/story-review";
 import { syncScheduleHumanFieldsFromCron } from "@/lib/sync-schedule-human";
@@ -13,7 +13,7 @@ export default async function AdminPage() {
 
   await syncScheduleHumanFieldsFromCron();
   await ensureTopicSourcesMigrated();
-  await ensureAuthProviderRows();
+  await migrateAuthProviderRows();
 
   const [users, topics, schedules, prompt, telegraph, about, authProviders, jobs, telegram] =
     await Promise.all([

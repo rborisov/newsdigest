@@ -1,50 +1,30 @@
 import { prisma } from "@/lib/db";
 import { decryptSecret, encryptSecret } from "@/lib/connection-secrets";
 import {
+  assertValidProviderId,
   authCallbackUrl,
   buildAuthProvidersFromResolved,
-  defaultDisplayNameForKind,
-  defaultProviderIdForKind,
-  effectiveProviderId,
-  isOidcStyleKind,
   normalizeIssuer,
   publicAuthBaseUrl,
   resolveEnvAuthProviders,
-  resolveIssuerForKind,
-  type AuthProviderKind,
+  resolveOidcIssuer,
   type ResolvedAuthProvider,
 } from "@/lib/auth-providers";
 import type { NextAuthConfig } from "next-auth";
 
-export const AUTH_PROVIDER_KINDS: AuthProviderKind[] = ["oidc", "google", "yandex"];
-
 export type AuthProviderPublicRow = {
-  id: AuthProviderKind;
+  /** Auth.js provider id / DB primary key. */
+  id: string;
   enabled: boolean;
   clientId: string;
   clientSecretConfigured: boolean;
   /** True when ciphertext exists but cannot be decrypted (e.g. CONNECTIONS_SECRET rotated). */
   clientSecretUnreadable: boolean;
   issuer: string;
-  providerId: string;
   displayName: string;
+  sortOrder: number;
   callbackUrl: string;
 };
-
-function asKind(id: string): AuthProviderKind | null {
-  if (id === "oidc" || id === "google" || id === "yandex") return id;
-  return null;
-}
-
-export async function ensureAuthProviderRows(): Promise<void> {
-  for (const id of AUTH_PROVIDER_KINDS) {
-    await prisma.authProvider.upsert({
-      where: { id },
-      update: {},
-      create: { id, providerId: defaultProviderIdForKind(id) },
-    });
-  }
-}
 
 function decryptClientSecret(enc: string, providerId?: string): string {
   const trimmed = enc.trim();
@@ -70,15 +50,37 @@ function rowConfigured(row: {
   if (!row.enabled) return false;
   if (!row.clientId.trim()) return false;
   if (!decryptClientSecret(row.clientSecretEnc, row.id)) return false;
-  const kind = asKind(row.id);
-  if (!kind) return false;
-  if (isOidcStyleKind(kind) && !resolveIssuerForKind(kind, row.issuer)) return false;
+  if (!resolveOidcIssuer(row.id, row.issuer)) return false;
   return true;
+}
+
+/**
+ * One-time cleanup: drop legacy non-OIDC Yandex slot; backfill Google issuer.
+ * Dynamic OIDC rows use `id` as the Auth.js callback segment.
+ */
+export async function migrateAuthProviderRows(): Promise<void> {
+  const yandex = await prisma.authProvider.findUnique({ where: { id: "yandex" } });
+  if (yandex && !normalizeIssuer(yandex.issuer)) {
+    await prisma.authProvider.delete({ where: { id: "yandex" } });
+  }
+
+  const google = await prisma.authProvider.findUnique({ where: { id: "google" } });
+  if (google && !normalizeIssuer(google.issuer) && google.clientId.trim()) {
+    await prisma.authProvider.update({
+      where: { id: "google" },
+      data: { issuer: resolveOidcIssuer("google", "") },
+    });
+  }
+}
+
+/** @deprecated Use migrateAuthProviderRows — no fixed slots anymore. */
+export async function ensureAuthProviderRows(): Promise<void> {
+  await migrateAuthProviderRows();
 }
 
 /** True when Admin has at least one enabled+configured provider in the DB. */
 export async function hasDatabaseAuthConfigured(): Promise<boolean> {
-  await ensureAuthProviderRows();
+  await migrateAuthProviderRows();
   const rows = await prisma.authProvider.findMany();
   return rows.some(rowConfigured);
 }
@@ -89,42 +91,31 @@ export function toPublicAuthProviderRow(row: {
   clientId: string;
   clientSecretEnc: string;
   issuer: string;
-  providerId: string;
   displayName: string;
-}): AuthProviderPublicRow | null {
-  const kind = asKind(row.id);
-  if (!kind) return null;
-
-  const providerId = effectiveProviderId(kind, row.providerId);
-  const displayName = row.displayName.trim() || defaultDisplayNameForKind(kind);
-  // Show effective issuer for OIDC-style slots (Google defaults when blank).
-  const issuer = isOidcStyleKind(kind)
-    ? resolveIssuerForKind(kind, row.issuer)
-    : row.issuer;
-
+  sortOrder?: number;
+}): AuthProviderPublicRow {
+  const issuer = resolveOidcIssuer(row.id, row.issuer);
   const hasCiphertext = Boolean(row.clientSecretEnc.trim());
-  const decrypted = hasCiphertext ? decryptClientSecret(row.clientSecretEnc, kind) : "";
+  const decrypted = hasCiphertext ? decryptClientSecret(row.clientSecretEnc, row.id) : "";
   return {
-    id: kind,
+    id: row.id,
     enabled: row.enabled,
     clientId: row.clientId,
     clientSecretConfigured: hasCiphertext,
     clientSecretUnreadable: hasCiphertext && !decrypted,
     issuer,
-    providerId,
-    displayName,
-    callbackUrl: authCallbackUrl(publicAuthBaseUrl(), providerId),
+    displayName: row.displayName.trim() || row.id,
+    sortOrder: row.sortOrder ?? 0,
+    callbackUrl: authCallbackUrl(publicAuthBaseUrl(), row.id),
   };
 }
 
 export async function listPublicAuthProviderRows(): Promise<AuthProviderPublicRow[]> {
-  await ensureAuthProviderRows();
-  const rows = await prisma.authProvider.findMany();
-  const byId = new Map(rows.map((row) => [row.id, row]));
-  return AUTH_PROVIDER_KINDS.map((id) => {
-    const row = byId.get(id);
-    return row ? toPublicAuthProviderRow(row) : null;
-  }).filter((row): row is AuthProviderPublicRow => row !== null);
+  await migrateAuthProviderRows();
+  const rows = await prisma.authProvider.findMany({
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+  });
+  return rows.map(toPublicAuthProviderRow);
 }
 
 function dbRowsToResolved(
@@ -134,35 +125,22 @@ function dbRowsToResolved(
     clientId: string;
     clientSecretEnc: string;
     issuer: string;
-    providerId: string;
     displayName: string;
   }[],
 ): ResolvedAuthProvider[] {
   const out: ResolvedAuthProvider[] = [];
   for (const row of rows) {
     if (!rowConfigured(row)) continue;
-    const kind = asKind(row.id);
-    if (!kind) continue;
     const secret = decryptClientSecret(row.clientSecretEnc, row.id);
-    if (isOidcStyleKind(kind)) {
-      out.push({
-        kind,
-        id: effectiveProviderId(kind, row.providerId),
-        name: row.displayName.trim() || defaultDisplayNameForKind(kind),
-        clientId: row.clientId.trim(),
-        clientSecret: secret,
-        issuer: resolveIssuerForKind(kind, row.issuer),
-        scopes: "openid email profile",
-        tokenAuthMethod: "client_secret_post",
-      });
-      continue;
-    }
+    const issuer = resolveOidcIssuer(row.id, row.issuer);
     out.push({
-      kind: "yandex",
-      id: effectiveProviderId("yandex", row.providerId),
-      name: row.displayName.trim() || "Yandex",
+      id: row.id,
+      name: row.displayName.trim() || row.id,
       clientId: row.clientId.trim(),
       clientSecret: secret,
+      issuer,
+      scopes: "openid email profile",
+      tokenAuthMethod: "client_secret_post",
     });
   }
   return out;
@@ -173,8 +151,10 @@ function dbRowsToResolved(
  * otherwise fall back to env bootstrap.
  */
 export async function resolveActiveAuthProviders(): Promise<ResolvedAuthProvider[]> {
-  await ensureAuthProviderRows();
-  const rows = await prisma.authProvider.findMany();
+  await migrateAuthProviderRows();
+  const rows = await prisma.authProvider.findMany({
+    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+  });
   const fromDb = dbRowsToResolved(rows);
   if (fromDb.length > 0) {
     return fromDb;
@@ -192,76 +172,129 @@ export async function listSignInButtons(): Promise<{ id: string; name: string }[
   return providers.map((p) => ({ id: p.id, name: p.name }));
 }
 
-export type AuthProviderPatch = {
-  id: AuthProviderKind;
+export type AuthProviderInput = {
+  /** Auth.js provider id (callback segment). Required. */
+  id: string;
   enabled?: boolean;
   clientId?: string;
-  /** Empty / omitted = keep existing secret. Non-empty = replace. */
+  /** Empty / omitted = keep existing secret when updating. */
   clientSecret?: string;
   issuer?: string;
-  providerId?: string;
   displayName?: string;
+  sortOrder?: number;
 };
 
-export async function patchAuthProvider(
-  patch: AuthProviderPatch,
-): Promise<AuthProviderPublicRow> {
-  await ensureAuthProviderRows();
-  const existing = await prisma.authProvider.findUnique({ where: { id: patch.id } });
-  if (!existing) {
-    throw new Error("Auth provider not found.");
+/**
+ * Replace the full OIDC issuer list from Admin.
+ * - Creates / updates by `id`
+ * - Deletes rows not present in the payload
+ * - Empty clientSecret keeps the previous ciphertext
+ */
+export async function replaceAuthProviders(
+  inputs: AuthProviderInput[],
+): Promise<AuthProviderPublicRow[]> {
+  await migrateAuthProviderRows();
+
+  if (!Array.isArray(inputs)) {
+    throw new Error("providers array is required.");
   }
 
-  const data: {
-    enabled?: boolean;
-    clientId?: string;
-    clientSecretEnc?: string;
-    issuer?: string;
-    providerId?: string;
-    displayName?: string;
-  } = {};
-
-  if (patch.enabled !== undefined) {
-    data.enabled = Boolean(patch.enabled);
-  }
-  if (patch.clientId !== undefined) {
-    data.clientId = patch.clientId.trim();
-  }
-  if (patch.clientSecret !== undefined && patch.clientSecret.trim()) {
-    data.clientSecretEnc = encryptSecret(patch.clientSecret.trim());
-  }
-  if (patch.issuer !== undefined) {
-    data.issuer = normalizeIssuer(patch.issuer);
-  }
-  if (patch.providerId !== undefined) {
-    const id = effectiveProviderId(patch.id, patch.providerId);
-    if (!/^[a-z0-9_-]+$/i.test(id)) {
-      throw new Error("providerId must be alphanumeric (plus _ -).");
+  const normalized = inputs.map((input, index) => {
+    const id = assertValidProviderId(input.id);
+    const issuer = resolveOidcIssuer(id, input.issuer ?? "");
+    const enabled = Boolean(input.enabled);
+    if (enabled && !issuer) {
+      throw new Error(`Issuer URL is required when enabling “${id}”.`);
     }
-    data.providerId = id;
-  }
-  if (patch.displayName !== undefined) {
-    data.displayName = patch.displayName.trim();
-  }
-
-  if (isOidcStyleKind(patch.id)) {
-    const nextEnabled = data.enabled ?? existing.enabled;
-    const nextIssuer = resolveIssuerForKind(
-      patch.id,
-      data.issuer ?? existing.issuer,
-    );
-    if (nextEnabled && !nextIssuer) {
-      throw new Error("OIDC issuer URL is required when enabled.");
+    if (enabled && !(input.clientId ?? "").trim()) {
+      throw new Error(`Client ID is required when enabling “${id}”.`);
     }
-  }
-
-  const updated = await prisma.authProvider.update({
-    where: { id: patch.id },
-    data,
+    return {
+      id,
+      enabled,
+      clientId: (input.clientId ?? "").trim(),
+      clientSecret: input.clientSecret,
+      issuer,
+      displayName: (input.displayName ?? "").trim() || id,
+      sortOrder: input.sortOrder ?? index,
+    };
   });
-  const publicRow = toPublicAuthProviderRow(updated);
-  if (!publicRow) {
-    throw new Error("Invalid provider.");
+
+  const ids = normalized.map((row) => row.id);
+  if (new Set(ids).size !== ids.length) {
+    throw new Error("Duplicate provider ids are not allowed.");
   }
-  return publicRow;
+
+  const existing = await prisma.authProvider.findMany();
+  const existingById = new Map(existing.map((row) => [row.id, row]));
+
+  for (const row of normalized) {
+    const prev = existingById.get(row.id);
+    let clientSecretEnc = prev?.clientSecretEnc ?? "";
+    if (row.clientSecret !== undefined && row.clientSecret.trim()) {
+      clientSecretEnc = encryptSecret(row.clientSecret.trim());
+    }
+    if (row.enabled && !decryptClientSecret(clientSecretEnc, row.id)) {
+      throw new Error(`Client secret is required when enabling “${row.id}”.`);
+    }
+
+    await prisma.authProvider.upsert({
+      where: { id: row.id },
+      create: {
+        id: row.id,
+        enabled: row.enabled,
+        clientId: row.clientId,
+        clientSecretEnc,
+        issuer: row.issuer,
+        providerId: row.id,
+        displayName: row.displayName,
+        sortOrder: row.sortOrder,
+      },
+      update: {
+        enabled: row.enabled,
+        clientId: row.clientId,
+        clientSecretEnc,
+        issuer: row.issuer,
+        providerId: row.id,
+        displayName: row.displayName,
+        sortOrder: row.sortOrder,
+      },
+    });
+  }
+
+  const keep = new Set(ids);
+  const toDelete = existing.filter((row) => !keep.has(row.id)).map((row) => row.id);
+  if (toDelete.length > 0) {
+    await prisma.authProvider.deleteMany({ where: { id: { in: toDelete } } });
+  }
+
+  return listPublicAuthProviderRows();
+}
+
+/** @deprecated Prefer replaceAuthProviders. */
+export type AuthProviderPatch = AuthProviderInput;
+
+/** @deprecated Prefer replaceAuthProviders. */
+export async function patchAuthProvider(
+  patch: AuthProviderInput,
+): Promise<AuthProviderPublicRow> {
+  const existing = await listPublicAuthProviderRows();
+  const others = existing.filter((row) => row.id !== patch.id);
+  const merged: AuthProviderInput[] = [
+    ...others.map((row) => ({
+      id: row.id,
+      enabled: row.enabled,
+      clientId: row.clientId,
+      issuer: row.issuer,
+      displayName: row.displayName,
+      sortOrder: row.sortOrder,
+    })),
+    patch,
+  ];
+  const updated = await replaceAuthProviders(merged);
+  const row = updated.find((item) => item.id === patch.id);
+  if (!row) {
+    throw new Error("Provider not found after save.");
+  }
+  return row;
 }

@@ -64,7 +64,7 @@ cp .env.example .env
 |----------|---------|
 | `NEXTAUTH_URL` | Public portal URL (`http://localhost:3000` locally; `https://your-domain.com` on VPS) |
 | `NEXTAUTH_SECRET` | Session signing secret (random string) |
-| `OIDC_*` / `GOOGLE_*` / `YANDEX_*` | Optional **bootstrap** only; prefer Admin → Sign-in |
+| `OIDC_*` / `GOOGLE_*` | Optional **bootstrap** only; prefer Admin → Sign-in (add OIDC issuers) |
 | `ALLOWED_EMAILS` | Comma-separated sign-in allowlist; seeded as admins |
 | `INTERNAL_API_KEY` | Shared secret for worker + MCP → portal internal APIs |
 | `CURSOR_API_KEY` | Cursor CLI API key for **Generate now** / scheduled runs |
@@ -76,29 +76,26 @@ Docker Compose sets `DATABASE_URL=file:/app/data/digest.db` on both `web` and `w
 
 ## Auth setup (Admin Sign-in)
 
-Prefer **Admin → Sign-in** (no day-to-day `.env` edits).
+Prefer **Admin → Sign-in** — add any number of **OpenID Connect** issuers (no day-to-day `.env` edits).
 
-| Slot | Protocol | What to enter |
-|------|----------|----------------|
-| **OIDC (custom)** | OpenID Connect | Issuer (e.g. `https://a.rclmx.info`), client id/secret, button label |
-| **Google** | OpenID Connect | Same fields; issuer defaults to `https://accounts.google.com` if blank |
-| **Yandex** | OAuth2 (optional) | Client id/secret only (no issuer) |
+Each issuer needs:
 
-Callbacks stay per provider id (shown in Admin). Examples:
+- Button label
+- Provider id (callback path segment, e.g. `oidc`, `google`)
+- Issuer URL (e.g. `https://a.rclmx.info`, `https://accounts.google.com`, `https://auth.yandex.cloud`)
+- Client id / secret
 
-- Custom OIDC: `{NEXTAUTH_URL}/api/auth/callback/oidc`
-- Google: `{NEXTAUTH_URL}/api/auth/callback/google`
-- Yandex: `{NEXTAUTH_URL}/api/auth/callback/yandex`
+Callback to register on the IdP: `{NEXTAUTH_URL}/api/auth/callback/{providerId}`.
 
-When any Admin provider is **enabled and fully configured**, it **overrides** `OIDC_*` / `GOOGLE_*` / `YANDEX_*` in `.env`. Env remains optional for **first bootstrap** before you can open Admin.
+When any Admin issuer is **enabled and fully configured**, it **overrides** `OIDC_*` / `GOOGLE_*` in `.env`. Env remains optional for **first bootstrap** before you can open Admin.
 
-Example with company IdP:
+Examples:
 
-1. On the IdP (`a.rclmx.info` → OIDC apps), create a client with redirect `https://n.rclmx.info/api/auth/callback/oidc`.
-2. On News Digest → **Admin → Sign-in** → enable OIDC → paste issuer, client id, secret → Save.
-3. Allowlist the user on the IdP and in **Admin → People**.
+1. Company IdP: issuer `https://a.rclmx.info`, provider id `oidc` → callback `…/callback/oidc`
+2. Google: issuer `https://accounts.google.com`, provider id `google` → callback `…/callback/google`
+3. Yandex Cloud Identity Hub (OIDC): issuer `https://auth.yandex.cloud` (or the issuer your Hub app shows)
 
-Optional: enable Google (OIDC) and/or Yandex on the same page for direct buttons.
+Consumer **Yandex OAuth** (`oauth.yandex.ru`) is not OpenID Connect and is not supported — use an OIDC issuer instead.
 
 ## Docker (production path)
 

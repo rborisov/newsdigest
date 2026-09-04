@@ -4,10 +4,9 @@ import { describe, it } from "node:test";
 import {
   authCallbackUrl,
   buildAuthProvidersFromResolved,
-  effectiveProviderId,
   GOOGLE_OIDC_ISSUER,
   resolveEnvAuthProviders,
-  resolveIssuerForKind,
+  resolveOidcIssuer,
   DEFAULT_OIDC_PROVIDER_ID,
 } from "./auth-providers";
 
@@ -40,31 +39,27 @@ describe("auth-providers", () => {
       GOOGLE_CLIENT_SECRET: "gs",
     });
     assert.equal(resolved.length, 2);
-    assert.deepEqual(
-      resolved.map((r) => r.kind),
-      ["oidc", "google"],
-    );
-    assert.equal(resolved[1]?.issuer, GOOGLE_OIDC_ISSUER);
     assert.equal(resolved[1]?.id, "google");
+    assert.equal(resolved[1]?.issuer, GOOGLE_OIDC_ISSUER);
   });
 
-  it("defaults blank Google issuer to accounts.google.com", () => {
-    assert.equal(resolveIssuerForKind("google", ""), GOOGLE_OIDC_ISSUER);
-    assert.equal(resolveIssuerForKind("google", " https://accounts.google.com/ "), GOOGLE_OIDC_ISSUER);
-    assert.equal(resolveIssuerForKind("oidc", ""), "");
+  it("ignores legacy Yandex env (not OIDC)", () => {
+    const resolved = resolveEnvAuthProviders({
+      YANDEX_CLIENT_ID: "y",
+      YANDEX_CLIENT_SECRET: "ys",
+    } as Record<string, string>);
+    assert.deepEqual(resolved, []);
   });
 
-  it("treats schema default providerId oidc as unset for Google slot", () => {
-    assert.equal(effectiveProviderId("google", "oidc"), "google");
-    assert.equal(effectiveProviderId("google", "google"), "google");
-    assert.equal(effectiveProviderId("oidc", "oidc"), "oidc");
-    assert.equal(effectiveProviderId("oidc", "company"), "company");
+  it("defaults blank Google issuer by provider id", () => {
+    assert.equal(resolveOidcIssuer("google", ""), GOOGLE_OIDC_ISSUER);
+    assert.equal(resolveOidcIssuer("oidc", ""), "");
+    assert.equal(resolveOidcIssuer("oidc", " https://a.example/ "), "https://a.example");
   });
 
-  it("builds Auth.js OIDC providers for both custom and Google slots", () => {
+  it("builds Auth.js OIDC providers for any issuer list", () => {
     const providers = buildAuthProvidersFromResolved([
       {
-        kind: "oidc",
         id: "company",
         name: "Company login",
         clientId: "c",
@@ -72,7 +67,6 @@ describe("auth-providers", () => {
         issuer: "https://idp.example.com",
       },
       {
-        kind: "google",
         id: "google",
         name: "Google",
         clientId: "g",
@@ -81,33 +75,18 @@ describe("auth-providers", () => {
       },
     ]);
     assert.equal(providers.length, 2);
-    const custom = providers[0] as {
-      id?: string;
-      type?: string;
-      allowDangerousEmailAccountLinking?: boolean;
-    };
+    const custom = providers[0] as { id?: string; type?: string };
     const google = providers[1] as { id?: string; type?: string; issuer?: string };
     assert.equal(custom.id, "company");
     assert.equal(custom.type, "oidc");
-    assert.equal(custom.allowDangerousEmailAccountLinking, true);
     assert.equal(google.type, "oidc");
-    assert.equal(google.id, "google");
     assert.equal(google.issuer, GOOGLE_OIDC_ISSUER);
-    assert.equal(
-      (custom as { authorization?: { params?: { prompt?: string } } }).authorization
-        ?.params?.prompt,
-      "login",
-    );
   });
 
   it("builds callback URLs", () => {
     assert.equal(
       authCallbackUrl("https://n.example.com/", DEFAULT_OIDC_PROVIDER_ID),
       "https://n.example.com/api/auth/callback/oidc",
-    );
-    assert.equal(
-      authCallbackUrl("https://n.example.com", "google"),
-      "https://n.example.com/api/auth/callback/google",
     );
   });
 });

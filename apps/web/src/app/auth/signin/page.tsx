@@ -55,9 +55,9 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
         ) : null}
         {buttons.length === 0 ? (
           <p className="muted">
-            Sign-in is not configured. An admin must enable providers under{" "}
-            <strong>Admin → Sign-in</strong> (or set bootstrap{" "}
-            <code>OIDC_*</code> / Google / Yandex env for first login).
+            Sign-in is not configured. An admin must add an OIDC issuer under{" "}
+            <strong>Admin → Sign-in</strong> (or set bootstrap <code>OIDC_*</code> in{" "}
+            <code>.env</code> for first login).
           </p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>

@@ -97,14 +97,14 @@ type AboutPageRow = {
 };
 
 type AuthProviderAdminRow = {
-  id: "oidc" | "google" | "yandex";
+  id: string;
   enabled: boolean;
   clientId: string;
   clientSecretConfigured: boolean;
   clientSecretUnreadable?: boolean;
   issuer: string;
-  providerId: string;
   displayName: string;
+  sortOrder: number;
   callbackUrl: string;
 };
 
@@ -2782,18 +2782,45 @@ function AboutSection({ initialAbout }: { initialAbout: AboutPageRow }) {
 
 function SignInSection({ initialProviders }: { initialProviders: AuthProviderAdminRow[] }) {
   const router = useRouter();
-  const [providers, setProviders] = useState(() =>
-    initialProviders.map((row) => ({ ...row, clientSecret: "" })),
+  type Draft = AuthProviderAdminRow & { clientSecret: string; _key: string };
+  const [providers, setProviders] = useState<Draft[]>(() =>
+    initialProviders.map((row) => ({ ...row, clientSecret: "", _key: row.id })),
   );
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
 
-  function updateProvider(
-    id: AuthProviderAdminRow["id"],
-    patch: Partial<(typeof providers)[number]>,
-  ) {
-    setProviders((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  const callbackBase = (() => {
+    const sample = initialProviders[0]?.callbackUrl || providers[0]?.callbackUrl || "";
+    const trimmed = sample.replace(/\/api\/auth\/callback\/[^/]+\/?$/, "");
+    return trimmed || "";
+  })();
+
+  function updateProvider(key: string, patch: Partial<Draft>) {
+    setProviders((prev) => prev.map((row) => (row._key === key ? { ...row, ...patch } : row)));
+  }
+
+  function addIssuer() {
+    const suffix = providers.length === 0 ? "oidc" : `issuer${providers.length + 1}`;
+    setProviders((prev) => [
+      ...prev,
+      {
+        _key: `draft-${Date.now()}`,
+        id: suffix,
+        enabled: false,
+        clientId: "",
+        clientSecretConfigured: false,
+        issuer: "",
+        displayName: "",
+        sortOrder: prev.length,
+        callbackUrl: callbackBase ? `${callbackBase}/api/auth/callback/${suffix}` : "",
+        clientSecret: "",
+      },
+    ]);
+  }
+
+  function removeIssuer(key: string) {
+    setProviders((prev) => prev.filter((row) => row._key !== key));
   }
 
   async function handleSave(event: React.FormEvent) {
@@ -2803,16 +2830,16 @@ function SignInSection({ initialProviders }: { initialProviders: AuthProviderAdm
     setError(undefined);
 
     const result = await adminFetch("/api/admin/auth-providers", {
-      method: "PATCH",
+      method: "PUT",
       body: JSON.stringify({
-        providers: providers.map((row) => ({
+        providers: providers.map((row, index) => ({
           id: row.id,
           enabled: row.enabled,
           clientId: row.clientId,
           clientSecret: row.clientSecret.trim() || undefined,
           issuer: row.issuer,
-          providerId: row.providerId,
           displayName: row.displayName,
+          sortOrder: index,
         })),
       }),
     });
@@ -2825,127 +2852,152 @@ function SignInSection({ initialProviders }: { initialProviders: AuthProviderAdm
 
     const data = result.data as { providers?: AuthProviderAdminRow[] };
     if (data.providers) {
-      setProviders(data.providers.map((row) => ({ ...row, clientSecret: "" })));
+      setProviders(data.providers.map((row) => ({ ...row, clientSecret: "", _key: row.id })));
     }
-    setMessage("Sign-in providers saved. DB settings override env bootstrap.");
+    setMessage("OIDC issuers saved. DB settings override env bootstrap.");
     router.refresh();
   }
-
-  const titles: Record<AuthProviderAdminRow["id"], string> = {
-    oidc: "OIDC (custom issuer)",
-    google: "Google (OpenID Connect)",
-    yandex: "Yandex (optional OAuth)",
-  };
-  const issuerPlaceholders: Record<"oidc" | "google", string> = {
-    oidc: "https://a.rclmx.info",
-    google: "https://accounts.google.com",
-  };
-  const providerIdPlaceholders: Record<AuthProviderAdminRow["id"], string> = {
-    oidc: "oidc",
-    google: "google",
-    yandex: "yandex",
-  };
 
   return (
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Sign-in</h2>
       <p style={messageStyle}>
-        OIDC slots share the same settings (issuer, client id/secret, callback id). Use a custom
-        issuer for company login, or Google&apos;s OpenID issuer. Yandex is optional OAuth (not
-        OIDC). Secrets are encrypted in the database — leave a secret blank to keep the current
-        value. When any provider below is enabled and fully configured, it overrides{" "}
-        <code>OIDC_*</code> / <code>GOOGLE_*</code> / <code>YANDEX_*</code> in <code>.env</code>.
-        If secrets become unreadable after an update (rotated <code>CONNECTIONS_SECRET</code>),
-        Auth falls back to <code>.env</code> — re-enter the client secret and Save.
+        Add any OpenID Connect issuers (company IdP, Google{" "}
+        <code>https://accounts.google.com</code>, Yandex Cloud Identity Hub, etc.). Each row needs
+        an issuer URL, client id/secret, and a unique provider id (callback path segment). Leave a
+        secret blank to keep the current value. When any issuer is enabled and configured, it
+        overrides <code>OIDC_*</code> / <code>GOOGLE_*</code> in <code>.env</code>. Consumer Yandex
+        OAuth (non-OIDC) is not supported — use an OIDC issuer instead.
       </p>
 
       <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-        {providers.map((row) => (
-          <div
-            key={row.id}
-            style={{
-              border: "1px solid var(--line, #ddd)",
-              borderRadius: "6px",
-              padding: "1rem",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-              maxWidth: "36rem",
-            }}
-          >
-            <h3 style={{ ...headingStyle, marginBottom: 0 }}>{titles[row.id]}</h3>
-            <label style={{ ...fieldStyle, flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
-              <input
-                type="checkbox"
-                checked={row.enabled}
-                onChange={(event) => updateProvider(row.id, { enabled: event.target.checked })}
-              />
-              Enabled
-            </label>
-            <label style={fieldStyle}>
-              Button label
-              <input
-                value={row.displayName}
-                onChange={(event) => updateProvider(row.id, { displayName: event.target.value })}
-                placeholder={titles[row.id]}
-                style={inputStyle}
-              />
-            </label>
-            {row.id === "oidc" || row.id === "google" ? (
-              <>
-                <label style={fieldStyle}>
-                  Issuer URL
-                  <input
-                    value={row.issuer}
-                    onChange={(event) => updateProvider(row.id, { issuer: event.target.value })}
-                    placeholder={issuerPlaceholders[row.id]}
-                    style={inputStyle}
-                  />
-                </label>
-                <label style={fieldStyle}>
-                  Auth.js provider id (callback path segment)
-                  <input
-                    value={row.providerId}
-                    onChange={(event) => updateProvider(row.id, { providerId: event.target.value })}
-                    placeholder={providerIdPlaceholders[row.id]}
-                    style={inputStyle}
-                  />
-                </label>
-              </>
-            ) : null}
-            <label style={fieldStyle}>
-              Client ID
-              <input
-                value={row.clientId}
-                onChange={(event) => updateProvider(row.id, { clientId: event.target.value })}
-                style={inputStyle}
-              />
-            </label>
-            <label style={fieldStyle}>
-              Client secret
-              <input
-                type="password"
-                value={row.clientSecret}
-                onChange={(event) => updateProvider(row.id, { clientSecret: event.target.value })}
-                placeholder={
-                  row.clientSecretConfigured ? "Leave blank to keep current secret" : "Paste client secret"
-                }
-                style={inputStyle}
-              />
-            </label>
-            <p style={{ ...messageStyle, marginTop: 0 }}>
-              Callback (register on the IdP): <code>{row.callbackUrl}</code>
-              {row.clientSecretUnreadable
-                ? " · Secret unreadable — re-enter (CONNECTIONS_SECRET may have changed)"
-                : row.clientSecretConfigured
-                  ? " · Secret configured"
-                  : " · Secret not set"}
-            </p>
-          </div>
-        ))}
-        <button type="submit" disabled={pending} style={{ ...buttonStyle, alignSelf: "start" }}>
-          Save sign-in providers
-        </button>
+        {providers.length === 0 ? (
+          <p style={messageStyle}>No issuers yet. Add one to enable sign-in (or use env bootstrap).</p>
+        ) : null}
+        {providers.map((row) => {
+          const callbackPreview = callbackBase
+            ? `${callbackBase}/api/auth/callback/${row.id.trim() || "…"}`
+            : row.callbackUrl;
+          return (
+            <div
+              key={row._key}
+              style={{
+                border: "1px solid var(--line, #ddd)",
+                borderRadius: "6px",
+                padding: "1rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+                maxWidth: "36rem",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                }}
+              >
+                <h3 style={{ ...headingStyle, marginBottom: 0 }}>
+                  {row.displayName.trim() || row.id || "OIDC issuer"}
+                </h3>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => removeIssuer(row._key)}
+                  style={{ ...buttonStyle, background: "transparent", color: "#b00020" }}
+                >
+                  Remove
+                </button>
+              </div>
+              <label
+                style={{ ...fieldStyle, flexDirection: "row", alignItems: "center", gap: "0.5rem" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={row.enabled}
+                  onChange={(event) => updateProvider(row._key, { enabled: event.target.checked })}
+                />
+                Enabled
+              </label>
+              <label style={fieldStyle}>
+                Button label
+                <input
+                  value={row.displayName}
+                  onChange={(event) => updateProvider(row._key, { displayName: event.target.value })}
+                  placeholder="Company login"
+                  style={inputStyle}
+                />
+              </label>
+              <label style={fieldStyle}>
+                Provider id (callback path segment)
+                <input
+                  value={row.id}
+                  onChange={(event) => updateProvider(row._key, { id: event.target.value.trim() })}
+                  placeholder="oidc"
+                  style={inputStyle}
+                  required
+                  disabled={!row._key.startsWith("draft-")}
+                  title={
+                    row._key.startsWith("draft-")
+                      ? undefined
+                      : "Provider id is fixed after save (matches the IdP redirect URI)."
+                  }
+                />
+              </label>
+              <label style={fieldStyle}>
+                Issuer URL
+                <input
+                  value={row.issuer}
+                  onChange={(event) => updateProvider(row._key, { issuer: event.target.value })}
+                  placeholder="https://a.rclmx.info"
+                  style={inputStyle}
+                />
+              </label>
+              <label style={fieldStyle}>
+                Client ID
+                <input
+                  value={row.clientId}
+                  onChange={(event) => updateProvider(row._key, { clientId: event.target.value })}
+                  style={inputStyle}
+                />
+              </label>
+              <label style={fieldStyle}>
+                Client secret
+                <input
+                  type="password"
+                  value={row.clientSecret}
+                  onChange={(event) =>
+                    updateProvider(row._key, { clientSecret: event.target.value })
+                  }
+                  placeholder={
+                    row.clientSecretConfigured
+                      ? "Leave blank to keep current secret"
+                      : "Paste client secret"
+                  }
+                  style={inputStyle}
+                />
+              </label>
+              <p style={{ ...messageStyle, marginTop: 0 }}>
+                Callback (register on the IdP): <code>{callbackPreview}</code>
+                {row.clientSecretUnreadable
+                  ? " · Secret unreadable — re-enter (CONNECTIONS_SECRET may have changed)"
+                  : row.clientSecretConfigured
+                    ? " · Secret configured"
+                    : " · Secret not set"}
+              </p>
+            </div>
+          );
+        })}
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <button type="button" onClick={addIssuer} style={{ ...buttonStyle, alignSelf: "start" }}>
+            Add OIDC issuer
+          </button>
+          <button type="submit" disabled={pending} style={{ ...buttonStyle, alignSelf: "start" }}>
+            Save sign-in providers
+          </button>
+        </div>
       </form>
       <StatusMessage message={message} error={error} />
     </section>

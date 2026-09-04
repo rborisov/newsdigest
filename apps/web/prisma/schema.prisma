@@ -475,19 +475,19 @@ model AboutPage {
   updatedAt          DateTime @updatedAt
 }
 
-/// Sign-in providers edited in Admin (secrets encrypted). Ids: oidc | google | yandex
-/// oidc + google are OIDC-style (issuer + client); yandex is optional OAuth.
+/// Dynamic OpenID Connect issuers (Admin → Sign-in). `id` is the Auth.js callback segment.
 model AuthProvider {
   id               String   @id
   enabled          Boolean  @default(false)
   clientId         String   @default("")
   /// AES-GCM ciphertext via connection-secrets (empty = not set)
   clientSecretEnc  String   @default("")
-  /// OIDC issuer URL (oidc + google; google defaults to accounts.google.com when blank)
+  /// OIDC issuer URL (Google may use https://accounts.google.com)
   issuer           String   @default("")
-  /// Auth.js provider id → /api/auth/callback/{id} (defaults: oidc / google / yandex)
+  /// Legacy mirror of id (kept for older rows / db push compatibility)
   providerId       String   @default("oidc")
   /// Button label
   displayName      String   @default("")
+  sortOrder        Int      @default(0)
   updatedAt        DateTime @updatedAt
 }

@@ -421,7 +421,7 @@ prompt_config() {
   prompt_optional OIDC_PROVIDER_ID "OIDC Auth.js provider id" "${OIDC_PROVIDER_ID:-oidc}"
   prompt_optional OIDC_PROVIDER_NAME "OIDC button label" "${OIDC_PROVIDER_NAME}"
 
-  local oidc_ok=0 google_ok=0 yandex_ok=0
+  local oidc_ok=0 google_ok=0
   if [[ -n "${OIDC_ISSUER}" && -n "${OIDC_CLIENT_ID}" && -n "${OIDC_CLIENT_SECRET}" ]]; then
     oidc_ok=1
   fi
@@ -429,18 +429,13 @@ prompt_config() {
 
   prompt_optional GOOGLE_CLIENT_ID "Google OIDC client ID (bootstrap; issuer accounts.google.com)" "${GOOGLE_CLIENT_ID}"
   prompt_secret GOOGLE_CLIENT_SECRET "Google OIDC client secret (bootstrap)" "${GOOGLE_CLIENT_SECRET}"
-  prompt_optional YANDEX_CLIENT_ID "Yandex OAuth client ID (optional bootstrap)" "${YANDEX_CLIENT_ID}"
-  prompt_secret YANDEX_CLIENT_SECRET "Yandex OAuth client secret (optional bootstrap)" "${YANDEX_CLIENT_SECRET}"
   if [[ -n "${GOOGLE_CLIENT_ID}" && -n "${GOOGLE_CLIENT_SECRET}" ]]; then
     google_ok=1
   fi
-  if [[ -n "${YANDEX_CLIENT_ID}" && -n "${YANDEX_CLIENT_SECRET}" ]]; then
-    yandex_ok=1
-  fi
 
-  if [[ "${oidc_ok}" -eq 0 && "${google_ok}" -eq 0 && "${yandex_ok}" -eq 0 ]]; then
-    log "No env bootstrap providers set — OK if Admin → Sign-in already has providers."
-    log "If you cannot sign in after install, re-run with reconfigure and set bootstrap OIDC/Google/Yandex."
+  if [[ "${oidc_ok}" -eq 0 && "${google_ok}" -eq 0 ]]; then
+    log "No env bootstrap providers set — OK if Admin → Sign-in already has OIDC issuers."
+    log "If you cannot sign in after install, re-run with reconfigure and set bootstrap OIDC (or Google)."
   fi
 
   if [[ "${oidc_ok}" -eq 1 ]]; then
@@ -501,9 +496,6 @@ OIDC_PROVIDER_NAME=${OIDC_PROVIDER_NAME}
 
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
 GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-
-YANDEX_CLIENT_ID=${YANDEX_CLIENT_ID}
-YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET}
 
 ALLOWED_EMAILS=${ALLOWED_EMAILS}
 

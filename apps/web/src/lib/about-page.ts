@@ -1,5 +1,23 @@
 export type AboutLocale = "en" | "ru";
 
+export const DEFAULT_HOME_TITLE = "News digest";
+export const DEFAULT_HOME_LEAD =
+  "Scheduled and on-demand digests from your topics — researched by an agent and published to Telegra.ph.";
+
+export type HomeHeroContent = {
+  title: string;
+  lead: string;
+};
+
+/** Resolve home hero copy with defaults when fields are missing or blank. */
+export function resolveHomeHero(
+  page: { homeTitle?: string | null; homeLead?: string | null } | null | undefined,
+): HomeHeroContent {
+  const title = page?.homeTitle?.trim() || DEFAULT_HOME_TITLE;
+  const lead = page?.homeLead?.trim() || DEFAULT_HOME_LEAD;
+  return { title, lead };
+}
+
 export type AboutPageContentFields = {
   footerLabelEn: string;
   footerLabelRu: string;

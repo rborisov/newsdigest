@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   resolveAboutRedirectLocale,
-  isAboutLocaleEnabled,
   pickAboutLocaleContent,
   aboutSectionLabels,
+  resolveHomeHero,
+  DEFAULT_HOME_TITLE,
+  DEFAULT_HOME_LEAD,
 } from "./about-page";
 
 describe("about-page helpers", () => {
@@ -38,5 +40,23 @@ describe("about-page helpers", () => {
 
   it("returns RU section labels", () => {
     assert.equal(aboutSectionLabels("ru").product, "Продукт");
+  });
+
+  it("resolves home hero with defaults when missing", () => {
+    assert.deepEqual(resolveHomeHero(null), {
+      title: DEFAULT_HOME_TITLE,
+      lead: DEFAULT_HOME_LEAD,
+    });
+    assert.deepEqual(resolveHomeHero({ homeTitle: "  ", homeLead: "" }), {
+      title: DEFAULT_HOME_TITLE,
+      lead: DEFAULT_HOME_LEAD,
+    });
+  });
+
+  it("resolves home hero from stored copy", () => {
+    assert.deepEqual(
+      resolveHomeHero({ homeTitle: " Desk ", homeLead: "Custom lead." }),
+      { title: "Desk", lead: "Custom lead." },
+    );
   });
 });

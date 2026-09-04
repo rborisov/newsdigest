@@ -456,6 +456,8 @@ model VerificationToken {
 
 model AboutPage {
   id                 String   @id @default("default")
+  homeTitle          String   @default("News digest")
+  homeLead           String   @default("Scheduled and on-demand digests from your topics — researched by an agent and published to Telegra.ph.")
   enabledEn          Boolean  @default(true)
   enabledRu          Boolean  @default(true)
   footerLabelEn      String   @default("About / Collaboration")

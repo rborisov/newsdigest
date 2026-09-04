@@ -78,6 +78,8 @@ type SocialConnectionRow = {
 };
 
 type AboutPageRow = {
+  homeTitle: string;
+  homeLead: string;
   enabledEn: boolean;
   enabledRu: boolean;
   footerLabelEn: string;
@@ -2573,6 +2575,8 @@ const ABOUT_LOCALE_TABS: { id: AboutLocale; label: string }[] = [
 function AboutSection({ initialAbout }: { initialAbout: AboutPageRow }) {
   const router = useRouter();
   const [locale, setLocale] = useState<AboutLocale>("en");
+  const [homeTitle, setHomeTitle] = useState(initialAbout.homeTitle);
+  const [homeLead, setHomeLead] = useState(initialAbout.homeLead);
   const [enabledEn, setEnabledEn] = useState(initialAbout.enabledEn);
   const [enabledRu, setEnabledRu] = useState(initialAbout.enabledRu);
   const [footerLabelEn, setFooterLabelEn] = useState(initialAbout.footerLabelEn);
@@ -2609,6 +2613,8 @@ function AboutSection({ initialAbout }: { initialAbout: AboutPageRow }) {
     const result = await adminFetch("/api/admin/about", {
       method: "PATCH",
       body: JSON.stringify({
+        homeTitle,
+        homeLead,
         enabledEn,
         enabledRu,
         footerLabelEn,
@@ -2632,7 +2638,7 @@ function AboutSection({ initialAbout }: { initialAbout: AboutPageRow }) {
       return;
     }
 
-    setMessage("About page saved.");
+    setMessage("Site copy saved.");
     router.refresh();
   }
 
@@ -2653,36 +2659,56 @@ function AboutSection({ initialAbout }: { initialAbout: AboutPageRow }) {
 
   return (
     <section style={sectionStyle}>
-      <h2 style={headingStyle}>About</h2>
+      <h2 style={headingStyle}>Site copy</h2>
       <p style={messageStyle}>
-        Public About / Collaboration page at <code>/about</code>. Markdown supported in body fields.
+        Edit the home hero and the public About / Collaboration page at <code>/about</code>.
+        Markdown is supported in About body fields. Blank home fields fall back to the defaults.
       </p>
 
-      <nav
-        aria-label="About locales"
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.25rem 0.5rem",
-          borderBottom: "1px solid var(--line, #ddd)",
-          marginTop: "1rem",
-          marginBottom: "1rem",
-        }}
-      >
-        {ABOUT_LOCALE_TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            style={localeTabStyle(locale === item.id)}
-            aria-current={locale === item.id ? "true" : undefined}
-            onClick={() => setLocale(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </nav>
-
       <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <h3 style={{ ...headingStyle, fontSize: "1.05rem", marginTop: "0.5rem", marginBottom: 0 }}>
+          Home page
+        </h3>
+        <label style={fieldStyle}>
+          Title
+          <input value={homeTitle} onChange={(event) => setHomeTitle(event.target.value)} style={inputStyle} />
+        </label>
+        <label style={fieldStyle}>
+          Lead
+          <textarea
+            rows={3}
+            value={homeLead}
+            onChange={(event) => setHomeLead(event.target.value)}
+            style={{ ...inputStyle, width: "100%" }}
+          />
+        </label>
+
+        <h3 style={{ ...headingStyle, fontSize: "1.05rem", marginTop: "1rem", marginBottom: 0 }}>
+          About / Collaboration
+        </h3>
+        <nav
+          aria-label="About locales"
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.25rem 0.5rem",
+            borderBottom: "1px solid var(--line, #ddd)",
+            marginBottom: "0.25rem",
+          }}
+        >
+          {ABOUT_LOCALE_TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              style={localeTabStyle(locale === item.id)}
+              aria-current={locale === item.id ? "true" : undefined}
+              onClick={() => setLocale(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
         <label style={{ ...fieldStyle, flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
           <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
           Enabled
@@ -2732,7 +2758,7 @@ function AboutSection({ initialAbout }: { initialAbout: AboutPageRow }) {
           />
         </label>
         <button type="submit" disabled={pending} style={{ ...buttonStyle, alignSelf: "start" }}>
-          Save about page
+          Save site copy
         </button>
       </form>
 
@@ -3470,7 +3496,7 @@ const ADMIN_TABS = [
   { id: "prompt", label: "Prompt" },
   { id: "topics", label: "Topics" },
   { id: "schedules", label: "Schedules" },
-  { id: "about", label: "About" },
+  { id: "about", label: "Site copy" },
   { id: "system", label: "System" },
   { id: "keys", label: "API keys" },
 ] as const;
@@ -3488,6 +3514,9 @@ function resolveAdminTabHash(raw: string): AdminTabId | null {
   }
   if (raw === "connections") {
     return "keys";
+  }
+  if (raw === "site-copy") {
+    return "about";
   }
   return isAdminTabId(raw) ? raw : null;
 }

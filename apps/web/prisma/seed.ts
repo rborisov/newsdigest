@@ -82,6 +82,9 @@ async function main() {
     update: {},
     create: {
       id: "default",
+      homeTitle: "News digest",
+      homeLead:
+        "Scheduled and on-demand digests from your topics — researched by an agent and published to Telegra.ph.",
       enabledEn: true,
       enabledRu: true,
       footerLabelEn: "About / Collaboration",

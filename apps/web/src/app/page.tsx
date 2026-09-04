@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SignOutButton } from "@/app/sign-out-button";
 import { SiteFooter } from "@/app/site-footer";
 import { SiteHeader } from "@/app/site-header";
-import { siteFooterLinks } from "@/lib/about-page";
+import { siteFooterLinks, resolveHomeHero } from "@/lib/about-page";
 import { auth } from "@/lib/auth";
 import { formatDigestWhen } from "@/lib/digest-display";
 import { prisma } from "@/lib/db";
@@ -26,6 +26,7 @@ export default async function HomePage() {
 
   const isSignedIn = Boolean(session?.user?.email);
   const isAdmin = session?.user?.isAdmin ?? false;
+  const homeHero = resolveHomeHero(about);
 
   const rawHtmlChunks = board.map((card) =>
     layoutBoardStoryBlocks(stripLeadingTopicHeading(card.htmlContent, card.topicName)),
@@ -57,11 +58,8 @@ export default async function HomePage() {
           />
 
           <section className="hero hero-compact">
-            <h1>News digest</h1>
-            <p>
-              Scheduled and on-demand digests from your topics — researched by an agent and
-              published to Telegra.ph.
-            </p>
+            <h1>{homeHero.title}</h1>
+            <p>{homeHero.lead}</p>
           </section>
         </div>
       </header>

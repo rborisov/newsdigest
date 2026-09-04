@@ -80,6 +80,8 @@ export default async function AdminPage() {
     prisma.aboutPage.findUnique({
       where: { id: "default" },
       select: {
+        homeTitle: true,
+        homeLead: true,
         enabledEn: true,
         enabledRu: true,
         footerLabelEn: true,

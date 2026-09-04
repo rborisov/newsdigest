@@ -9,6 +9,8 @@ const DEFAULT_FOOTER_LABEL_EN = "About / Collaboration";
 const DEFAULT_FOOTER_LABEL_RU = "О продукте / Сотрудничество";
 
 const STRING_FIELDS = [
+  "homeTitle",
+  "homeLead",
   "footerLabelEn",
   "footerLabelRu",
   "pageTitleEn",
@@ -70,6 +72,8 @@ export async function PATCH(request: Request) {
   const data: {
     enabledEn?: boolean;
     enabledRu?: boolean;
+    homeTitle?: string;
+    homeLead?: string;
     footerLabelEn?: string;
     footerLabelRu?: string;
     pageTitleEn?: string;

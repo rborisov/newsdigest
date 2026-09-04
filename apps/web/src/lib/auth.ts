@@ -10,6 +10,22 @@ import authConfig from "@/lib/auth.config";
 import { loadAuthProviders } from "@/lib/auth-settings";
 import { prisma } from "@/lib/db";
 
+function emailFromAuthPayload(
+  user: { email?: string | null },
+  profile?: unknown,
+): string | undefined {
+  if (typeof user.email === "string" && user.email.trim()) {
+    return user.email.trim();
+  }
+  if (profile && typeof profile === "object" && profile !== null) {
+    const email = (profile as { email?: unknown }).email;
+    if (typeof email === "string" && email.trim()) {
+      return email.trim();
+    }
+  }
+  return undefined;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
   const providers = await loadAuthProviders();
   return {
@@ -20,19 +36,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
     providers,
     callbacks: {
       async signIn({ user, profile }) {
-        const email =
-          (typeof user.email === "string" && user.email) ||
-          (profile && typeof profile.email === "string" ? profile.email : undefined);
-        if (!email) {
-          return false;
+        const raw = emailFromAuthPayload(user, profile);
+        if (!raw) {
+          return "/auth/error?error=NoEmail";
         }
-
-        return isEmailAllowed(email);
+        const email = normalizeEmail(raw);
+        if (!(await isEmailAllowed(email))) {
+          return `/auth/error?error=AccessDenied&email=${encodeURIComponent(email)}`;
+        }
+        return true;
       },
       async jwt({ token, user, profile }) {
         const email =
-          user?.email ??
-          (profile && typeof profile.email === "string" ? profile.email : undefined) ??
+          emailFromAuthPayload(user ?? {}, profile) ??
           (typeof token.email === "string" ? token.email : undefined);
 
         if (email) {

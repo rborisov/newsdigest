@@ -55,9 +55,14 @@ describe("auth-providers", () => {
       },
     ]);
     assert.equal(providers.length, 1);
-    const provider = providers[0] as { id?: string; type?: string };
+    const provider = providers[0] as {
+      id?: string;
+      type?: string;
+      allowDangerousEmailAccountLinking?: boolean;
+    };
     assert.equal(provider.id, "company");
     assert.equal(provider.type, "oidc");
+    assert.equal(provider.allowDangerousEmailAccountLinking, true);
   });
 
   it("builds callback URLs", () => {

@@ -91,6 +91,10 @@ export function buildAuthProvidersFromResolved(
   resolved: ResolvedAuthProvider[],
 ): NextAuthConfig["providers"] {
   return resolved.map((row) => {
+    // Same verified email may already exist from a prior Google/Yandex login;
+    // allow linking the company OIDC (or other) account to that user.
+    const linkSameEmail = { allowDangerousEmailAccountLinking: true as const };
+
     if (row.kind === "oidc") {
       return {
         id: row.id,
@@ -99,6 +103,7 @@ export function buildAuthProvidersFromResolved(
         issuer: row.issuer!,
         clientId: row.clientId,
         clientSecret: row.clientSecret,
+        ...linkSameEmail,
         authorization: {
           params: { scope: row.scopes || "openid email profile" },
         },
@@ -119,11 +124,13 @@ export function buildAuthProvidersFromResolved(
       return Google({
         clientId: row.clientId,
         clientSecret: row.clientSecret,
+        ...linkSameEmail,
       });
     }
     return Yandex({
       clientId: row.clientId,
       clientSecret: row.clientSecret,
+      ...linkSameEmail,
     });
   });
 }

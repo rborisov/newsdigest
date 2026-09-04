@@ -34,7 +34,11 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
 
       <section className="hero">
         <h1>Sign in</h1>
-        <p>Admin access requires an allowlisted email.</p>
+        <p>
+          Sign in with an email listed under Admin → People. If you use company login (
+          <code>a.rclmx.info</code>), the email in the token must match that list — not a Synology
+          username.
+        </p>
       </section>
 
       <section className="panel" style={{ maxWidth: "24rem" }}>

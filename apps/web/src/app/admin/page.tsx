@@ -1,5 +1,6 @@
 import { AdminClient } from "@/app/admin/admin-ui";
 import { requireAdmin } from "@/lib/require-admin";
+import { listPublicAuthProviderRows, ensureAuthProviderRows } from "@/lib/auth-settings";
 import { prisma } from "@/lib/db";
 import { DEFAULT_REVIEW_TEMPLATE } from "@/lib/story-review";
 import { syncScheduleHumanFieldsFromCron } from "@/lib/sync-schedule-human";
@@ -12,121 +13,124 @@ export default async function AdminPage() {
 
   await syncScheduleHumanFieldsFromCron();
   await ensureTopicSourcesMigrated();
+  await ensureAuthProviderRows();
 
-  const [users, topics, schedules, prompt, telegraph, about, jobs, telegram] = await Promise.all([
-    prisma.allowedUser.findMany({
-      orderBy: [{ isAdmin: "desc" }, { email: "asc" }],
-      select: { id: true, email: true, isAdmin: true },
-    }),
-    prisma.topic.findMany({
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: {
-        id: true,
-        name: true,
-        keywords: true,
-        enabled: true,
-        sortOrder: true,
-        scheduleId: true,
-        sources: {
-          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-          select: {
-            id: true,
-            kind: true,
-            enabled: true,
-            sortOrder: true,
-            configJson: true,
-            connectionId: true,
-            lastSyncAt: true,
-            lastError: true,
+  const [users, topics, schedules, prompt, telegraph, about, authProviders, jobs, telegram] =
+    await Promise.all([
+      prisma.allowedUser.findMany({
+        orderBy: [{ isAdmin: "desc" }, { email: "asc" }],
+        select: { id: true, email: true, isAdmin: true },
+      }),
+      prisma.topic.findMany({
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          keywords: true,
+          enabled: true,
+          sortOrder: true,
+          scheduleId: true,
+          sources: {
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+            select: {
+              id: true,
+              kind: true,
+              enabled: true,
+              sortOrder: true,
+              configJson: true,
+              connectionId: true,
+              lastSyncAt: true,
+              lastError: true,
+            },
           },
         },
-      },
-    }),
-    prisma.schedule.findMany({
-      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-      select: {
-        id: true,
-        name: true,
-        cronExpr: true,
-        timezone: true,
-        enabled: true,
-        isDefault: true,
-        recurrence: true,
-        timeOfDay: true,
-        weekday: true,
-        intervalHours: true,
-        periodHours: true,
-      },
-    }),
-    prisma.promptConfig.findUnique({
-      where: { id: "default" },
-      select: {
-        template: true,
-        periodHours: true,
-        boardStaleDays: true,
-        displayTimezone: true,
-        language: true,
-        reviewTemplate: true,
-      },
-    }),
-    prisma.telegraphMeta.findUnique({
-      where: { id: "default" },
-      select: {
-        accessToken: true,
-        authorName: true,
-        authorUrl: true,
-      },
-    }),
-    prisma.aboutPage.findUnique({
-      where: { id: "default" },
-      select: {
-        homeTitle: true,
-        homeLead: true,
-        enabledEn: true,
-        enabledRu: true,
-        footerLabelEn: true,
-        footerLabelRu: true,
-        pageTitleEn: true,
-        pageTitleRu: true,
-        leadEn: true,
-        leadRu: true,
-        productEn: true,
-        productRu: true,
-        outlookEn: true,
-        outlookRu: true,
-        collaborationEn: true,
-        collaborationRu: true,
-      },
-    }),
-    prisma.generationJob.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      select: {
-        id: true,
-        status: true,
-        triggerType: true,
-        error: true,
-        createdAt: true,
-        updatedAt: true,
-        publishedPage: {
-          select: { title: true, telegraphUrl: true },
+      }),
+      prisma.schedule.findMany({
+        orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          cronExpr: true,
+          timezone: true,
+          enabled: true,
+          isDefault: true,
+          recurrence: true,
+          timeOfDay: true,
+          weekday: true,
+          intervalHours: true,
+          periodHours: true,
         },
-        steps: {
-          orderBy: { sortOrder: "asc" },
-          select: {
-            id: true,
-            kind: true,
-            status: true,
-            sortOrder: true,
-            topicName: true,
-            error: true,
-            updatedAt: true,
+      }),
+      prisma.promptConfig.findUnique({
+        where: { id: "default" },
+        select: {
+          template: true,
+          periodHours: true,
+          boardStaleDays: true,
+          displayTimezone: true,
+          language: true,
+          reviewTemplate: true,
+        },
+      }),
+      prisma.telegraphMeta.findUnique({
+        where: { id: "default" },
+        select: {
+          accessToken: true,
+          authorName: true,
+          authorUrl: true,
+        },
+      }),
+      prisma.aboutPage.findUnique({
+        where: { id: "default" },
+        select: {
+          homeTitle: true,
+          homeLead: true,
+          enabledEn: true,
+          enabledRu: true,
+          footerLabelEn: true,
+          footerLabelRu: true,
+          pageTitleEn: true,
+          pageTitleRu: true,
+          leadEn: true,
+          leadRu: true,
+          productEn: true,
+          productRu: true,
+          outlookEn: true,
+          outlookRu: true,
+          collaborationEn: true,
+          collaborationRu: true,
+        },
+      }),
+      listPublicAuthProviderRows(),
+      prisma.generationJob.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          status: true,
+          triggerType: true,
+          error: true,
+          createdAt: true,
+          updatedAt: true,
+          publishedPage: {
+            select: { title: true, telegraphUrl: true },
+          },
+          steps: {
+            orderBy: { sortOrder: "asc" },
+            select: {
+              id: true,
+              kind: true,
+              status: true,
+              sortOrder: true,
+              topicName: true,
+              error: true,
+              updatedAt: true,
+            },
           },
         },
-      },
-    }),
-    getTelegramConnectionPublic(),
-  ]);
+      }),
+      getTelegramConnectionPublic(),
+    ]);
 
   if (!prompt || !telegraph || !about) {
     throw new Error("Default prompt, telegraph, or about config is missing. Run db:seed.");
@@ -152,6 +156,7 @@ export default async function AdminPage() {
           reviewTemplate: prompt.reviewTemplate?.trim() || DEFAULT_REVIEW_TEMPLATE,
         },
         about,
+        authProviders,
         telegraph: {
           accessTokenConfigured: telegraph.accessToken.trim().length > 0,
           authorName: telegraph.authorName,
@@ -178,7 +183,6 @@ export default async function AdminPage() {
               updatedAt: step.updatedAt.toISOString(),
               logTail: "",
             })),
-            activeStepLog: "",
           };
         }),
       }}

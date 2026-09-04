@@ -25,6 +25,11 @@ ensure_data_dirs() {
 DOMAIN=""
 LE_EMAIL=""
 ALLOWED_EMAILS=""
+OIDC_ISSUER=""
+OIDC_CLIENT_ID=""
+OIDC_CLIENT_SECRET=""
+OIDC_PROVIDER_ID="oidc"
+OIDC_PROVIDER_NAME=""
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
 YANDEX_CLIENT_ID=""
@@ -352,6 +357,11 @@ load_env_defaults() {
       DOMAIN) DOMAIN="${val}" ;;
       LE_EMAIL) LE_EMAIL="${val}" ;;
       ALLOWED_EMAILS) ALLOWED_EMAILS="${val}" ;;
+      OIDC_ISSUER) OIDC_ISSUER="${val}" ;;
+      OIDC_CLIENT_ID) OIDC_CLIENT_ID="${val}" ;;
+      OIDC_CLIENT_SECRET) OIDC_CLIENT_SECRET="${val}" ;;
+      OIDC_PROVIDER_ID) OIDC_PROVIDER_ID="${val}" ;;
+      OIDC_PROVIDER_NAME) OIDC_PROVIDER_NAME="${val}" ;;
       GOOGLE_CLIENT_ID) GOOGLE_CLIENT_ID="${val}" ;;
       GOOGLE_CLIENT_SECRET) GOOGLE_CLIENT_SECRET="${val}" ;;
       YANDEX_CLIENT_ID) YANDEX_CLIENT_ID="${val}" ;;
@@ -386,21 +396,37 @@ prompt_config() {
   prompt ALLOWED_EMAILS "Allowed admin emails (comma-separated)" "${ALLOWED_EMAILS}"
   [[ -n "${ALLOWED_EMAILS}" ]] || die "ALLOWED_EMAILS is required."
 
-  prompt GOOGLE_CLIENT_ID "Google OAuth client ID (optional)" "${GOOGLE_CLIENT_ID}"
-  prompt_secret GOOGLE_CLIENT_SECRET "Google OAuth client secret (optional)" "${GOOGLE_CLIENT_SECRET}"
+  log "Sign-in providers are managed in Admin → Sign-in after first login."
+  log "Optional env bootstrap (used only until Admin providers are configured):"
+  prompt OIDC_ISSUER "OIDC issuer URL bootstrap (optional)" "${OIDC_ISSUER}"
+  prompt OIDC_CLIENT_ID "OIDC client id bootstrap (optional)" "${OIDC_CLIENT_ID}"
+  prompt_secret OIDC_CLIENT_SECRET "OIDC client secret bootstrap (optional)" "${OIDC_CLIENT_SECRET}"
+  prompt OIDC_PROVIDER_ID "OIDC Auth.js provider id" "${OIDC_PROVIDER_ID:-oidc}"
+  prompt OIDC_PROVIDER_NAME "OIDC button label (optional)" "${OIDC_PROVIDER_NAME}"
 
-  prompt YANDEX_CLIENT_ID "Yandex OAuth client ID (optional)" "${YANDEX_CLIENT_ID}"
-  prompt_secret YANDEX_CLIENT_SECRET "Yandex OAuth client secret (optional)" "${YANDEX_CLIENT_SECRET}"
+  local oidc_ok=0 google_ok=0 yandex_ok=0
+  if [[ -n "${OIDC_ISSUER}" && -n "${OIDC_CLIENT_ID}" && -n "${OIDC_CLIENT_SECRET}" ]]; then
+    oidc_ok=1
+  fi
+  [[ -n "${OIDC_PROVIDER_ID}" ]] || OIDC_PROVIDER_ID="oidc"
 
-  local google_ok=0 yandex_ok=0
+  prompt GOOGLE_CLIENT_ID "Google OAuth client ID bootstrap (optional)" "${GOOGLE_CLIENT_ID}"
+  prompt_secret GOOGLE_CLIENT_SECRET "Google OAuth client secret bootstrap (optional)" "${GOOGLE_CLIENT_SECRET}"
+  prompt YANDEX_CLIENT_ID "Yandex OAuth client ID bootstrap (optional)" "${YANDEX_CLIENT_ID}"
+  prompt_secret YANDEX_CLIENT_SECRET "Yandex OAuth client secret bootstrap (optional)" "${YANDEX_CLIENT_SECRET}"
   if [[ -n "${GOOGLE_CLIENT_ID}" && -n "${GOOGLE_CLIENT_SECRET}" ]]; then
     google_ok=1
   fi
   if [[ -n "${YANDEX_CLIENT_ID}" && -n "${YANDEX_CLIENT_SECRET}" ]]; then
     yandex_ok=1
   fi
-  if [[ "${google_ok}" -eq 0 && "${yandex_ok}" -eq 0 ]]; then
-    die "Configure at least one full OAuth provider (Google or Yandex client id + secret)."
+
+  if [[ "${oidc_ok}" -eq 0 && "${google_ok}" -eq 0 && "${yandex_ok}" -eq 0 ]]; then
+    die "Need at least one bootstrap provider (OIDC or Google or Yandex) so you can open Admin → Sign-in."
+  fi
+
+  if [[ "${oidc_ok}" -eq 1 ]]; then
+    log "OIDC bootstrap via ${OIDC_ISSUER}; register https://${DOMAIN}/api/auth/callback/${OIDC_PROVIDER_ID} on the IdP."
   fi
 
   prompt_secret CURSOR_API_KEY "Cursor API key" "${CURSOR_API_KEY}"
@@ -438,6 +464,12 @@ LE_EMAIL=${LE_EMAIL}
 
 NEXTAUTH_URL=${NEXTAUTH_URL}
 NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+
+OIDC_ISSUER=${OIDC_ISSUER}
+OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+OIDC_PROVIDER_ID=${OIDC_PROVIDER_ID}
+OIDC_PROVIDER_NAME=${OIDC_PROVIDER_NAME}
 
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
 GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}

@@ -135,6 +135,14 @@ If this fits a channel, newsroom, research team, or corporate monitoring need, r
 Если это подходит каналу, редакции, исследовательской группе или корпоративному мониторингу — напишите с описанием задачи и предпочитаемого формата. (Укажите здесь контактные данные.)`,
     },
   });
+
+  for (const id of ["oidc", "google", "yandex"] as const) {
+    await prisma.authProvider.upsert({
+      where: { id },
+      update: {},
+      create: { id },
+    });
+  }
 }
 
 main()

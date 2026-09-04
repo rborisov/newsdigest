@@ -7,59 +7,64 @@ import {
   normalizeEmail,
 } from "@/lib/allowed-user";
 import authConfig from "@/lib/auth.config";
+import { loadAuthProviders } from "@/lib/auth-settings";
 import { prisma } from "@/lib/db";
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
-  session: { strategy: "jwt" },
-  secret: process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET,
-  ...authConfig,
-  callbacks: {
-    async signIn({ user }) {
-      if (!user.email) {
-        return false;
-      }
+export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
+  const providers = await loadAuthProviders();
+  return {
+    adapter: PrismaAdapter(prisma),
+    session: { strategy: "jwt" },
+    secret: process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET,
+    ...authConfig,
+    providers,
+    callbacks: {
+      async signIn({ user }) {
+        if (!user.email) {
+          return false;
+        }
 
-      return isEmailAllowed(user.email);
-    },
-    async jwt({ token, user }) {
-      const email =
-        user?.email ??
-        (typeof token.email === "string" ? token.email : undefined);
+        return isEmailAllowed(user.email);
+      },
+      async jwt({ token, user }) {
+        const email =
+          user?.email ??
+          (typeof token.email === "string" ? token.email : undefined);
 
-      if (email) {
-        const normalizedEmail = normalizeEmail(email);
-        token.email = normalizedEmail;
-        token.isAdmin = await getIsAdminFromAllowlist(normalizedEmail);
-      }
+        if (email) {
+          const normalizedEmail = normalizeEmail(email);
+          token.email = normalizedEmail;
+          token.isAdmin = await getIsAdminFromAllowlist(normalizedEmail);
+        }
 
-      return token;
-    },
-    async session({ session, token }) {
-      if (!session.user) {
+        return token;
+      },
+      async session({ session, token }) {
+        if (!session.user) {
+          return session;
+        }
+
+        if (token.sub) {
+          session.user.id = token.sub;
+        }
+
+        const email =
+          typeof token.email === "string"
+            ? token.email
+            : session.user.email ?? undefined;
+
+        if (email) {
+          const normalizedEmail = normalizeEmail(email);
+          session.user.email = normalizedEmail;
+          session.user.isAdmin = await getIsAdminFromAllowlist(normalizedEmail);
+        } else {
+          session.user.isAdmin = false;
+        }
+
         return session;
-      }
-
-      if (token.sub) {
-        session.user.id = token.sub;
-      }
-
-      const email =
-        typeof token.email === "string"
-          ? token.email
-          : session.user.email ?? undefined;
-
-      if (email) {
-        const normalizedEmail = normalizeEmail(email);
-        session.user.email = normalizedEmail;
-        session.user.isAdmin = await getIsAdminFromAllowlist(normalizedEmail);
-      } else {
-        session.user.isAdmin = false;
-      }
-
-      return session;
+      },
     },
-  },
+  };
 });
 
 async function getIsAdminFromAllowlist(email: string): Promise<boolean> {

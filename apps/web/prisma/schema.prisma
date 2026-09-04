@@ -474,3 +474,19 @@ model AboutPage {
   collaborationRu    String   @default("")
   updatedAt          DateTime @updatedAt
 }
+
+/// Sign-in providers edited in Admin (secrets encrypted). Ids: oidc | google | yandex
+model AuthProvider {
+  id               String   @id
+  enabled          Boolean  @default(false)
+  clientId         String   @default("")
+  /// AES-GCM ciphertext via connection-secrets (empty = not set)
+  clientSecretEnc  String   @default("")
+  /// OIDC issuer URL (oidc only)
+  issuer           String   @default("")
+  /// Auth.js provider id for OIDC (default oidc) → /api/auth/callback/{id}
+  providerId       String   @default("oidc")
+  /// Button label
+  displayName      String   @default("")
+  updatedAt        DateTime @updatedAt
+}

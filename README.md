@@ -64,8 +64,7 @@ cp .env.example .env
 |----------|---------|
 | `NEXTAUTH_URL` | Public portal URL (`http://localhost:3000` locally; `https://your-domain.com` on VPS) |
 | `NEXTAUTH_SECRET` | Session signing secret (random string) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth |
-| `YANDEX_CLIENT_ID` / `YANDEX_CLIENT_SECRET` | Yandex OAuth |
+| `OIDC_*` / `GOOGLE_*` / `YANDEX_*` | Optional **bootstrap** only; prefer Admin → Sign-in |
 | `ALLOWED_EMAILS` | Comma-separated sign-in allowlist; seeded as admins |
 | `INTERNAL_API_KEY` | Shared secret for worker + MCP → portal internal APIs |
 | `CURSOR_API_KEY` | Cursor CLI API key for **Generate now** / scheduled runs |
@@ -75,23 +74,27 @@ cp .env.example .env
 
 Docker Compose sets `DATABASE_URL=file:/app/data/digest.db` on both `web` and `worker` and mounts a shared `digest-data` volume.
 
-## OAuth setup
+## Auth setup (Admin Sign-in)
 
-Create OAuth clients for each provider you enable.
+Prefer **Admin → Sign-in** (no day-to-day `.env` edits). Configure any combination of:
 
-**Google**
+| Provider | What to enter |
+|----------|----------------|
+| **OIDC** | Issuer URL (e.g. `https://a.rclmx.info`), client id/secret, button label |
+| **Google** | Client id/secret (direct Google OAuth) |
+| **Yandex** | Client id/secret (direct Yandex OAuth) |
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials → Create OAuth client ID (Web application).
-2. Authorized redirect URI: `{NEXTAUTH_URL}/api/auth/callback/google`
-3. Copy client ID and secret into `.env`.
+Callback URLs are shown in Admin (copy into the IdP). Example OIDC callback: `{NEXTAUTH_URL}/api/auth/callback/oidc`.
 
-**Yandex**
+When any Admin provider is **enabled and fully configured**, it **overrides** `OIDC_*` / `GOOGLE_*` / `YANDEX_*` in `.env`. Env remains optional for **first bootstrap** before you can open Admin.
 
-1. [Yandex OAuth](https://oauth.yandex.com/) → register an app.
-2. Redirect URI: `{NEXTAUTH_URL}/api/auth/callback/yandex`
-3. Copy client ID and secret into `.env`.
+Example with company IdP:
 
-Set `NEXTAUTH_URL` to the exact public URL users hit (HTTPS on VPS). Add every allowlisted email to `ALLOWED_EMAILS`.
+1. On the IdP (`a.rclmx.info` → OIDC apps), create a client with redirect `https://n.rclmx.info/api/auth/callback/oidc`.
+2. On News Digest → **Admin → Sign-in** → enable OIDC → paste issuer, client id, secret → Save.
+3. Allowlist the user on the IdP and in **Admin → People**.
+
+Optional: enable Google/Yandex on the same Sign-in page if you still want direct buttons (their callbacks are on `n.`, not on `a.`).
 
 ## Docker (production path)
 

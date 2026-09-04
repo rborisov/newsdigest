@@ -96,6 +96,17 @@ type AboutPageRow = {
   collaborationRu: string;
 };
 
+type AuthProviderAdminRow = {
+  id: "oidc" | "google" | "yandex";
+  enabled: boolean;
+  clientId: string;
+  clientSecretConfigured: boolean;
+  issuer: string;
+  providerId: string;
+  displayName: string;
+  callbackUrl: string;
+};
+
 export type GenerationStepRow = {
   id: string;
   kind: string;
@@ -130,6 +141,7 @@ export type AdminInitialData = {
   schedules: ScheduleRow[];
   prompt: PromptConfigRow;
   about: AboutPageRow;
+  authProviders: AuthProviderAdminRow[];
   telegraph: TelegraphMetaRow;
   cursorApiKeyConfigured: boolean;
   telegramApiConfigured: boolean;
@@ -2767,6 +2779,161 @@ function AboutSection({ initialAbout }: { initialAbout: AboutPageRow }) {
   );
 }
 
+function SignInSection({ initialProviders }: { initialProviders: AuthProviderAdminRow[] }) {
+  const router = useRouter();
+  const [providers, setProviders] = useState(() =>
+    initialProviders.map((row) => ({ ...row, clientSecret: "" })),
+  );
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [pending, setPending] = useState(false);
+
+  function updateProvider(
+    id: AuthProviderAdminRow["id"],
+    patch: Partial<(typeof providers)[number]>,
+  ) {
+    setProviders((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  }
+
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setMessage(undefined);
+    setError(undefined);
+
+    const result = await adminFetch("/api/admin/auth-providers", {
+      method: "PATCH",
+      body: JSON.stringify({
+        providers: providers.map((row) => ({
+          id: row.id,
+          enabled: row.enabled,
+          clientId: row.clientId,
+          clientSecret: row.clientSecret.trim() || undefined,
+          issuer: row.issuer,
+          providerId: row.providerId,
+          displayName: row.displayName,
+        })),
+      }),
+    });
+
+    setPending(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    const data = result.data as { providers?: AuthProviderAdminRow[] };
+    if (data.providers) {
+      setProviders(data.providers.map((row) => ({ ...row, clientSecret: "" })));
+    }
+    setMessage("Sign-in providers saved. DB settings override env bootstrap.");
+    router.refresh();
+  }
+
+  const titles: Record<AuthProviderAdminRow["id"], string> = {
+    oidc: "OIDC (any issuer)",
+    google: "Google",
+    yandex: "Yandex",
+  };
+
+  return (
+    <section style={sectionStyle}>
+      <h2 style={headingStyle}>Sign-in</h2>
+      <p style={messageStyle}>
+        Configure identity providers here. Secrets are encrypted in the database. Leave a secret
+        blank to keep the current value. When any provider below is enabled and fully configured,
+        it overrides <code>OIDC_*</code> / Google / Yandex values in <code>.env</code>.
+      </p>
+
+      <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        {providers.map((row) => (
+          <div
+            key={row.id}
+            style={{
+              border: "1px solid var(--line, #ddd)",
+              borderRadius: "6px",
+              padding: "1rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.75rem",
+              maxWidth: "36rem",
+            }}
+          >
+            <h3 style={{ ...headingStyle, marginBottom: 0 }}>{titles[row.id]}</h3>
+            <label style={{ ...fieldStyle, flexDirection: "row", alignItems: "center", gap: "0.5rem" }}>
+              <input
+                type="checkbox"
+                checked={row.enabled}
+                onChange={(event) => updateProvider(row.id, { enabled: event.target.checked })}
+              />
+              Enabled
+            </label>
+            <label style={fieldStyle}>
+              Button label
+              <input
+                value={row.displayName}
+                onChange={(event) => updateProvider(row.id, { displayName: event.target.value })}
+                placeholder={titles[row.id]}
+                style={inputStyle}
+              />
+            </label>
+            {row.id === "oidc" ? (
+              <>
+                <label style={fieldStyle}>
+                  Issuer URL
+                  <input
+                    value={row.issuer}
+                    onChange={(event) => updateProvider(row.id, { issuer: event.target.value })}
+                    placeholder="https://a.rclmx.info"
+                    style={inputStyle}
+                  />
+                </label>
+                <label style={fieldStyle}>
+                  Auth.js provider id
+                  <input
+                    value={row.providerId}
+                    onChange={(event) => updateProvider(row.id, { providerId: event.target.value })}
+                    placeholder="oidc"
+                    style={inputStyle}
+                  />
+                </label>
+              </>
+            ) : null}
+            <label style={fieldStyle}>
+              Client ID
+              <input
+                value={row.clientId}
+                onChange={(event) => updateProvider(row.id, { clientId: event.target.value })}
+                style={inputStyle}
+              />
+            </label>
+            <label style={fieldStyle}>
+              Client secret
+              <input
+                type="password"
+                value={row.clientSecret}
+                onChange={(event) => updateProvider(row.id, { clientSecret: event.target.value })}
+                placeholder={
+                  row.clientSecretConfigured ? "Leave blank to keep current secret" : "Paste client secret"
+                }
+                style={inputStyle}
+              />
+            </label>
+            <p style={{ ...messageStyle, marginTop: 0 }}>
+              Callback (register on the IdP): <code>{row.callbackUrl}</code>
+              {row.clientSecretConfigured ? " · Secret configured" : " · Secret not set"}
+            </p>
+          </div>
+        ))}
+        <button type="submit" disabled={pending} style={{ ...buttonStyle, alignSelf: "start" }}>
+          Save sign-in providers
+        </button>
+      </form>
+      <StatusMessage message={message} error={error} />
+    </section>
+  );
+}
+
 function KeysSection({
   initialTelegraph,
   cursorApiKeyConfigured,
@@ -3497,6 +3664,7 @@ const ADMIN_TABS = [
   { id: "topics", label: "Topics" },
   { id: "schedules", label: "Schedules" },
   { id: "about", label: "Site copy" },
+  { id: "signin", label: "Sign-in" },
   { id: "system", label: "System" },
   { id: "keys", label: "API keys" },
 ] as const;
@@ -3614,6 +3782,7 @@ export function AdminClient({ data }: { data: AdminInitialData }) {
       ) : null}
       {tab === "schedules" ? <SchedulesSection initialSchedules={data.schedules} /> : null}
       {tab === "about" ? <AboutSection initialAbout={data.about} /> : null}
+      {tab === "signin" ? <SignInSection initialProviders={data.authProviders} /> : null}
       {tab === "system" ? <SystemSection /> : null}
       {keysVisited ? (
         <div style={{ display: tab === "keys" ? "block" : "none" }} hidden={tab !== "keys"}>

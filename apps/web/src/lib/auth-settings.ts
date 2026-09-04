@@ -19,6 +19,8 @@ export type AuthProviderPublicRow = {
   enabled: boolean;
   clientId: string;
   clientSecretConfigured: boolean;
+  /** True when ciphertext exists but cannot be decrypted (e.g. CONNECTIONS_SECRET rotated). */
+  clientSecretUnreadable: boolean;
   issuer: string;
   providerId: string;
   displayName: string;
@@ -40,12 +42,16 @@ export async function ensureAuthProviderRows(): Promise<void> {
   }
 }
 
-function decryptClientSecret(enc: string): string {
+function decryptClientSecret(enc: string, providerId?: string): string {
   const trimmed = enc.trim();
   if (!trimmed) return "";
   try {
     return decryptSecret(trimmed);
   } catch {
+    console.warn(
+      `[auth] Failed to decrypt AuthProvider secret${providerId ? ` for ${providerId}` : ""}. ` +
+        "Check CONNECTIONS_SECRET / NEXTAUTH_SECRET were not rotated; re-enter the client secret in Admin → Sign-in.",
+    );
     return "";
   }
 }
@@ -59,7 +65,7 @@ function rowConfigured(row: {
 }): boolean {
   if (!row.enabled) return false;
   if (!row.clientId.trim()) return false;
-  if (!decryptClientSecret(row.clientSecretEnc)) return false;
+  if (!decryptClientSecret(row.clientSecretEnc, row.id)) return false;
   if (row.id === "oidc" && !normalizeIssuer(row.issuer)) return false;
   return true;
 }
@@ -91,11 +97,14 @@ export function toPublicAuthProviderRow(row: {
     row.displayName.trim() ||
     (kind === "oidc" ? "OIDC" : kind === "google" ? "Google" : "Yandex");
 
+  const hasCiphertext = Boolean(row.clientSecretEnc.trim());
+  const decrypted = hasCiphertext ? decryptClientSecret(row.clientSecretEnc, kind) : "";
   return {
     id: kind,
     enabled: row.enabled,
     clientId: row.clientId,
-    clientSecretConfigured: Boolean(row.clientSecretEnc.trim()),
+    clientSecretConfigured: hasCiphertext,
+    clientSecretUnreadable: hasCiphertext && !decrypted,
     issuer: row.issuer,
     providerId,
     displayName,
@@ -129,7 +138,7 @@ function dbRowsToResolved(
     if (!rowConfigured(row)) continue;
     const kind = asKind(row.id);
     if (!kind) continue;
-    const secret = decryptClientSecret(row.clientSecretEnc);
+    const secret = decryptClientSecret(row.clientSecretEnc, row.id);
     if (kind === "oidc") {
       out.push({
         kind: "oidc",

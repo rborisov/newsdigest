@@ -101,6 +101,7 @@ type AuthProviderAdminRow = {
   enabled: boolean;
   clientId: string;
   clientSecretConfigured: boolean;
+  clientSecretUnreadable?: boolean;
   issuer: string;
   providerId: string;
   displayName: string;
@@ -2842,7 +2843,9 @@ function SignInSection({ initialProviders }: { initialProviders: AuthProviderAdm
       <p style={messageStyle}>
         Configure identity providers here. Secrets are encrypted in the database. Leave a secret
         blank to keep the current value. When any provider below is enabled and fully configured,
-        it overrides <code>OIDC_*</code> / Google / Yandex values in <code>.env</code>.
+        it overrides <code>OIDC_*</code> / Google / Yandex values in <code>.env</code>. If secrets
+        become unreadable after an update (rotated <code>CONNECTIONS_SECRET</code>), Auth falls
+        back to <code>.env</code> — re-enter the client secret and Save.
       </p>
 
       <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -2921,7 +2924,11 @@ function SignInSection({ initialProviders }: { initialProviders: AuthProviderAdm
             </label>
             <p style={{ ...messageStyle, marginTop: 0 }}>
               Callback (register on the IdP): <code>{row.callbackUrl}</code>
-              {row.clientSecretConfigured ? " · Secret configured" : " · Secret not set"}
+              {row.clientSecretUnreadable
+                ? " · Secret unreadable — re-enter (CONNECTIONS_SECRET may have changed)"
+                : row.clientSecretConfigured
+                  ? " · Secret configured"
+                  : " · Secret not set"}
             </p>
           </div>
         ))}

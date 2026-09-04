@@ -6,7 +6,7 @@ import { listSignInButtons } from "@/lib/auth-settings";
 
 const SIGNIN_ERRORS: Record<string, string> = {
   OAuthAccountNotLinked:
-    "This email already signed in with another provider (for example Google before company login). After the next deploy, linking is allowed automatically — try again. If it still fails, ask an admin to clear the old Account row for your email.",
+    "This email is already linked to another sign-in method. Try again, or ask an admin if it keeps failing.",
   AccessDenied:
     "That email is not on the allowlist (Admin → People).",
   OAuthCallback: "Sign-in with the identity provider failed. Try again.",
@@ -45,11 +45,7 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
 
       <section className="hero">
         <h1>Sign in</h1>
-        <p>
-          Sign in with an email listed under Admin → People. If you use company login (
-          <code>a.rclmx.info</code>), the email in the token must match that list — not a Synology
-          username.
-        </p>
+        <p>Use an email that an admin has added under People.</p>
       </section>
 
       <section className="panel" style={{ maxWidth: "24rem" }}>

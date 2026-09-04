@@ -4,7 +4,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   AccessDenied:
     "That email is not on this site’s allowlist (Admin → People). Add the address shown below, or sign in with a listed address.",
   NoEmail:
-    "The identity provider did not return an email. On a.rclmx.info, use Google/Yandex and set the app to send that mailbox (not only a Synology username).",
+    "The identity provider did not return an email address. Sign in again with a provider that shares your email.",
   NotAdmin:
     "You are signed in, but this account is not an admin. Ask an admin to enable Admin for your email under People.",
   Configuration: "Authentication is misconfigured. Contact the site operator.",

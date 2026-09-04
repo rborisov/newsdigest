@@ -140,7 +140,10 @@ If this fits a channel, newsroom, research team, or corporate monitoring need, r
     await prisma.authProvider.upsert({
       where: { id },
       update: {},
-      create: { id },
+      create: {
+        id,
+        providerId: id === "oidc" ? "oidc" : id,
+      },
     });
   }
 }

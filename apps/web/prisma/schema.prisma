@@ -476,15 +476,16 @@ model AboutPage {
 }
 
 /// Sign-in providers edited in Admin (secrets encrypted). Ids: oidc | google | yandex
+/// oidc + google are OIDC-style (issuer + client); yandex is optional OAuth.
 model AuthProvider {
   id               String   @id
   enabled          Boolean  @default(false)
   clientId         String   @default("")
   /// AES-GCM ciphertext via connection-secrets (empty = not set)
   clientSecretEnc  String   @default("")
-  /// OIDC issuer URL (oidc only)
+  /// OIDC issuer URL (oidc + google; google defaults to accounts.google.com when blank)
   issuer           String   @default("")
-  /// Auth.js provider id for OIDC (default oidc) → /api/auth/callback/{id}
+  /// Auth.js provider id → /api/auth/callback/{id} (defaults: oidc / google / yandex)
   providerId       String   @default("oidc")
   /// Button label
   displayName      String   @default("")

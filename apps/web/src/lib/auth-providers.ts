@@ -1,9 +1,11 @@
 import type { NextAuthConfig } from "next-auth";
-import Google from "next-auth/providers/google";
 
 import Yandex from "@/lib/yandex-provider";
 
 export const DEFAULT_OIDC_PROVIDER_ID = "oidc";
+
+/** Google OpenID Connect issuer (discovery at /.well-known/openid-configuration). */
+export const GOOGLE_OIDC_ISSUER = "https://accounts.google.com";
 
 export type AuthProviderKind = "oidc" | "google" | "yandex";
 
@@ -42,6 +44,46 @@ export function normalizeIssuer(issuer: string): string {
   return issuer.trim().replace(/\/+$/, "");
 }
 
+/** OIDC-style slots share the same Auth.js wiring (issuer + client credentials). */
+export function isOidcStyleKind(kind: AuthProviderKind): boolean {
+  return kind === "oidc" || kind === "google";
+}
+
+/** Resolve issuer: stored value, or Google default when blank on the google slot. */
+export function resolveIssuerForKind(kind: AuthProviderKind, issuer: string): string {
+  const normalized = normalizeIssuer(issuer);
+  if (normalized) return normalized;
+  if (kind === "google") return GOOGLE_OIDC_ISSUER;
+  return "";
+}
+
+export function defaultProviderIdForKind(kind: AuthProviderKind): string {
+  if (kind === "google") return "google";
+  if (kind === "yandex") return "yandex";
+  return DEFAULT_OIDC_PROVIDER_ID;
+}
+
+/**
+ * Effective Auth.js id for callbacks. Schema default providerId is "oidc" for every
+ * row, so treat that default as unset for google/yandex slots.
+ */
+export function effectiveProviderId(kind: AuthProviderKind, stored: string): string {
+  const trimmed = stored.trim();
+  if (kind === "oidc") {
+    return trimmed || DEFAULT_OIDC_PROVIDER_ID;
+  }
+  if (!trimmed || trimmed === DEFAULT_OIDC_PROVIDER_ID) {
+    return defaultProviderIdForKind(kind);
+  }
+  return trimmed;
+}
+
+export function defaultDisplayNameForKind(kind: AuthProviderKind): string {
+  if (kind === "google") return "Google";
+  if (kind === "yandex") return "Yandex";
+  return "OIDC";
+}
+
 /** Providers built from environment (bootstrap when Admin DB is empty). */
 export function resolveEnvAuthProviders(
   env: AuthProviderEnv = process.env,
@@ -71,6 +113,9 @@ export function resolveEnvAuthProviders(
       name: "Google",
       clientId: trim(env.GOOGLE_CLIENT_ID),
       clientSecret: trim(env.GOOGLE_CLIENT_SECRET),
+      issuer: GOOGLE_OIDC_ISSUER,
+      scopes: "openid email profile",
+      tokenAuthMethod: "client_secret_post",
     });
   }
 
@@ -87,50 +132,47 @@ export function resolveEnvAuthProviders(
   return out;
 }
 
+function buildOidcAuthJsProvider(row: ResolvedAuthProvider) {
+  const linkSameEmail = { allowDangerousEmailAccountLinking: true as const };
+  return {
+    id: row.id,
+    name: row.name,
+    type: "oidc" as const,
+    issuer: row.issuer!,
+    clientId: row.clientId,
+    clientSecret: row.clientSecret,
+    ...linkSameEmail,
+    authorization: {
+      params: {
+        scope: row.scopes || "openid email profile",
+        // Force the IdP to re-authenticate instead of silent SSO.
+        prompt: "login",
+      },
+    },
+    client: {
+      token_endpoint_auth_method: row.tokenAuthMethod || "client_secret_post",
+    },
+    profile(profile: { sub?: string; name?: string; email?: string }) {
+      return {
+        id: String(profile.sub),
+        name: typeof profile.name === "string" ? profile.name : undefined,
+        email: typeof profile.email === "string" ? profile.email : undefined,
+        image: undefined,
+      };
+    },
+  };
+}
+
 export function buildAuthProvidersFromResolved(
   resolved: ResolvedAuthProvider[],
 ): NextAuthConfig["providers"] {
   return resolved.map((row) => {
-    // Same verified email may already exist from a prior Google/Yandex login;
-    // allow linking the company OIDC (or other) account to that user.
     const linkSameEmail = { allowDangerousEmailAccountLinking: true as const };
 
-    if (row.kind === "oidc") {
-      return {
-        id: row.id,
-        name: row.name,
-        type: "oidc" as const,
-        issuer: row.issuer!,
-        clientId: row.clientId,
-        clientSecret: row.clientSecret,
-        ...linkSameEmail,
-        authorization: {
-          params: {
-            scope: row.scopes || "openid email profile",
-            // Force the IdP to re-authenticate instead of silent SSO.
-            prompt: "login",
-          },
-        },
-        client: {
-          token_endpoint_auth_method: row.tokenAuthMethod || "client_secret_post",
-        },
-        profile(profile: { sub?: string; name?: string; email?: string }) {
-          return {
-            id: String(profile.sub),
-            name: typeof profile.name === "string" ? profile.name : undefined,
-            email: typeof profile.email === "string" ? profile.email : undefined,
-            image: undefined,
-          };
-        },
-      };
+    if (isOidcStyleKind(row.kind)) {
+      return buildOidcAuthJsProvider(row);
     }
-    if (row.kind === "google") {
-      return Google({
-        clientId: row.clientId,
-        clientSecret: row.clientSecret,
-        ...linkSameEmail,
-      });
-    }
+
     return Yandex({
       clientId: row.clientId,
       clientSecret: row.clientSecret,

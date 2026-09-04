@@ -2832,20 +2832,31 @@ function SignInSection({ initialProviders }: { initialProviders: AuthProviderAdm
   }
 
   const titles: Record<AuthProviderAdminRow["id"], string> = {
-    oidc: "OIDC (any issuer)",
-    google: "Google",
-    yandex: "Yandex",
+    oidc: "OIDC (custom issuer)",
+    google: "Google (OpenID Connect)",
+    yandex: "Yandex (optional OAuth)",
+  };
+  const issuerPlaceholders: Record<"oidc" | "google", string> = {
+    oidc: "https://a.rclmx.info",
+    google: "https://accounts.google.com",
+  };
+  const providerIdPlaceholders: Record<AuthProviderAdminRow["id"], string> = {
+    oidc: "oidc",
+    google: "google",
+    yandex: "yandex",
   };
 
   return (
     <section style={sectionStyle}>
       <h2 style={headingStyle}>Sign-in</h2>
       <p style={messageStyle}>
-        Configure identity providers here. Secrets are encrypted in the database. Leave a secret
-        blank to keep the current value. When any provider below is enabled and fully configured,
-        it overrides <code>OIDC_*</code> / Google / Yandex values in <code>.env</code>. If secrets
-        become unreadable after an update (rotated <code>CONNECTIONS_SECRET</code>), Auth falls
-        back to <code>.env</code> — re-enter the client secret and Save.
+        OIDC slots share the same settings (issuer, client id/secret, callback id). Use a custom
+        issuer for company login, or Google&apos;s OpenID issuer. Yandex is optional OAuth (not
+        OIDC). Secrets are encrypted in the database — leave a secret blank to keep the current
+        value. When any provider below is enabled and fully configured, it overrides{" "}
+        <code>OIDC_*</code> / <code>GOOGLE_*</code> / <code>YANDEX_*</code> in <code>.env</code>.
+        If secrets become unreadable after an update (rotated <code>CONNECTIONS_SECRET</code>),
+        Auth falls back to <code>.env</code> — re-enter the client secret and Save.
       </p>
 
       <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
@@ -2880,23 +2891,23 @@ function SignInSection({ initialProviders }: { initialProviders: AuthProviderAdm
                 style={inputStyle}
               />
             </label>
-            {row.id === "oidc" ? (
+            {row.id === "oidc" || row.id === "google" ? (
               <>
                 <label style={fieldStyle}>
                   Issuer URL
                   <input
                     value={row.issuer}
                     onChange={(event) => updateProvider(row.id, { issuer: event.target.value })}
-                    placeholder="https://a.rclmx.info"
+                    placeholder={issuerPlaceholders[row.id]}
                     style={inputStyle}
                   />
                 </label>
                 <label style={fieldStyle}>
-                  Auth.js provider id
+                  Auth.js provider id (callback path segment)
                   <input
                     value={row.providerId}
                     onChange={(event) => updateProvider(row.id, { providerId: event.target.value })}
-                    placeholder="oidc"
+                    placeholder={providerIdPlaceholders[row.id]}
                     style={inputStyle}
                   />
                 </label>

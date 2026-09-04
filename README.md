@@ -76,15 +76,19 @@ Docker Compose sets `DATABASE_URL=file:/app/data/digest.db` on both `web` and `w
 
 ## Auth setup (Admin Sign-in)
 
-Prefer **Admin → Sign-in** (no day-to-day `.env` edits). Configure any combination of:
+Prefer **Admin → Sign-in** (no day-to-day `.env` edits).
 
-| Provider | What to enter |
-|----------|----------------|
-| **OIDC** | Issuer URL (e.g. `https://a.rclmx.info`), client id/secret, button label |
-| **Google** | Client id/secret (direct Google OAuth) |
-| **Yandex** | Client id/secret (direct Yandex OAuth) |
+| Slot | Protocol | What to enter |
+|------|----------|----------------|
+| **OIDC (custom)** | OpenID Connect | Issuer (e.g. `https://a.rclmx.info`), client id/secret, button label |
+| **Google** | OpenID Connect | Same fields; issuer defaults to `https://accounts.google.com` if blank |
+| **Yandex** | OAuth2 (optional) | Client id/secret only (no issuer) |
 
-Callback URLs are shown in Admin (copy into the IdP). Example OIDC callback: `{NEXTAUTH_URL}/api/auth/callback/oidc`.
+Callbacks stay per provider id (shown in Admin). Examples:
+
+- Custom OIDC: `{NEXTAUTH_URL}/api/auth/callback/oidc`
+- Google: `{NEXTAUTH_URL}/api/auth/callback/google`
+- Yandex: `{NEXTAUTH_URL}/api/auth/callback/yandex`
 
 When any Admin provider is **enabled and fully configured**, it **overrides** `OIDC_*` / `GOOGLE_*` / `YANDEX_*` in `.env`. Env remains optional for **first bootstrap** before you can open Admin.
 
@@ -94,7 +98,7 @@ Example with company IdP:
 2. On News Digest → **Admin → Sign-in** → enable OIDC → paste issuer, client id, secret → Save.
 3. Allowlist the user on the IdP and in **Admin → People**.
 
-Optional: enable Google/Yandex on the same Sign-in page if you still want direct buttons (their callbacks are on `n.`, not on `a.`).
+Optional: enable Google (OIDC) and/or Yandex on the same page for direct buttons.
 
 ## Docker (production path)
 

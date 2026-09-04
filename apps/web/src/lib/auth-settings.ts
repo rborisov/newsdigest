@@ -3,10 +3,14 @@ import { decryptSecret, encryptSecret } from "@/lib/connection-secrets";
 import {
   authCallbackUrl,
   buildAuthProvidersFromResolved,
-  DEFAULT_OIDC_PROVIDER_ID,
+  defaultDisplayNameForKind,
+  defaultProviderIdForKind,
+  effectiveProviderId,
+  isOidcStyleKind,
   normalizeIssuer,
   publicAuthBaseUrl,
   resolveEnvAuthProviders,
+  resolveIssuerForKind,
   type AuthProviderKind,
   type ResolvedAuthProvider,
 } from "@/lib/auth-providers";
@@ -37,7 +41,7 @@ export async function ensureAuthProviderRows(): Promise<void> {
     await prisma.authProvider.upsert({
       where: { id },
       update: {},
-      create: { id },
+      create: { id, providerId: defaultProviderIdForKind(id) },
     });
   }
 }
@@ -66,7 +70,9 @@ function rowConfigured(row: {
   if (!row.enabled) return false;
   if (!row.clientId.trim()) return false;
   if (!decryptClientSecret(row.clientSecretEnc, row.id)) return false;
-  if (row.id === "oidc" && !normalizeIssuer(row.issuer)) return false;
+  const kind = asKind(row.id);
+  if (!kind) return false;
+  if (isOidcStyleKind(kind) && !resolveIssuerForKind(kind, row.issuer)) return false;
   return true;
 }
 
@@ -89,13 +95,12 @@ export function toPublicAuthProviderRow(row: {
   const kind = asKind(row.id);
   if (!kind) return null;
 
-  const providerId =
-    kind === "oidc"
-      ? row.providerId.trim() || DEFAULT_OIDC_PROVIDER_ID
-      : kind;
-  const displayName =
-    row.displayName.trim() ||
-    (kind === "oidc" ? "OIDC" : kind === "google" ? "Google" : "Yandex");
+  const providerId = effectiveProviderId(kind, row.providerId);
+  const displayName = row.displayName.trim() || defaultDisplayNameForKind(kind);
+  // Show effective issuer for OIDC-style slots (Google defaults when blank).
+  const issuer = isOidcStyleKind(kind)
+    ? resolveIssuerForKind(kind, row.issuer)
+    : row.issuer;
 
   const hasCiphertext = Boolean(row.clientSecretEnc.trim());
   const decrypted = hasCiphertext ? decryptClientSecret(row.clientSecretEnc, kind) : "";
@@ -105,7 +110,7 @@ export function toPublicAuthProviderRow(row: {
     clientId: row.clientId,
     clientSecretConfigured: hasCiphertext,
     clientSecretUnreadable: hasCiphertext && !decrypted,
-    issuer: row.issuer,
+    issuer,
     providerId,
     displayName,
     callbackUrl: authCallbackUrl(publicAuthBaseUrl(), providerId),
@@ -114,12 +119,12 @@ export function toPublicAuthProviderRow(row: {
 
 export async function listPublicAuthProviderRows(): Promise<AuthProviderPublicRow[]> {
   await ensureAuthProviderRows();
-  const rows = await prisma.authProvider.findMany({
-    orderBy: { id: "asc" },
-  });
-  return rows
-    .map(toPublicAuthProviderRow)
-    .filter((row): row is AuthProviderPublicRow => row !== null);
+  const rows = await prisma.authProvider.findMany();
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return AUTH_PROVIDER_KINDS.map((id) => {
+    const row = byId.get(id);
+    return row ? toPublicAuthProviderRow(row) : null;
+  }).filter((row): row is AuthProviderPublicRow => row !== null);
 }
 
 function dbRowsToResolved(
@@ -139,23 +144,23 @@ function dbRowsToResolved(
     const kind = asKind(row.id);
     if (!kind) continue;
     const secret = decryptClientSecret(row.clientSecretEnc, row.id);
-    if (kind === "oidc") {
+    if (isOidcStyleKind(kind)) {
       out.push({
-        kind: "oidc",
-        id: row.providerId.trim() || DEFAULT_OIDC_PROVIDER_ID,
-        name: row.displayName.trim() || "OIDC",
+        kind,
+        id: effectiveProviderId(kind, row.providerId),
+        name: row.displayName.trim() || defaultDisplayNameForKind(kind),
         clientId: row.clientId.trim(),
         clientSecret: secret,
-        issuer: normalizeIssuer(row.issuer),
+        issuer: resolveIssuerForKind(kind, row.issuer),
         scopes: "openid email profile",
         tokenAuthMethod: "client_secret_post",
       });
       continue;
     }
     out.push({
-      kind,
-      id: kind,
-      name: row.displayName.trim() || (kind === "google" ? "Google" : "Yandex"),
+      kind: "yandex",
+      id: effectiveProviderId("yandex", row.providerId),
+      name: row.displayName.trim() || "Yandex",
       clientId: row.clientId.trim(),
       clientSecret: secret,
     });
@@ -229,7 +234,7 @@ export async function patchAuthProvider(
     data.issuer = normalizeIssuer(patch.issuer);
   }
   if (patch.providerId !== undefined) {
-    const id = patch.providerId.trim() || DEFAULT_OIDC_PROVIDER_ID;
+    const id = effectiveProviderId(patch.id, patch.providerId);
     if (!/^[a-z0-9_-]+$/i.test(id)) {
       throw new Error("providerId must be alphanumeric (plus _ -).");
     }
@@ -239,10 +244,13 @@ export async function patchAuthProvider(
     data.displayName = patch.displayName.trim();
   }
 
-  if (patch.id === "oidc") {
+  if (isOidcStyleKind(patch.id)) {
     const nextEnabled = data.enabled ?? existing.enabled;
-    const nextIssuer = data.issuer ?? existing.issuer;
-    if (nextEnabled && !normalizeIssuer(nextIssuer)) {
+    const nextIssuer = resolveIssuerForKind(
+      patch.id,
+      data.issuer ?? existing.issuer,
+    );
+    if (nextEnabled && !nextIssuer) {
       throw new Error("OIDC issuer URL is required when enabled.");
     }
   }

@@ -427,10 +427,10 @@ prompt_config() {
   fi
   [[ -n "${OIDC_PROVIDER_ID}" ]] || OIDC_PROVIDER_ID="oidc"
 
-  prompt_optional GOOGLE_CLIENT_ID "Google OAuth client ID (bootstrap)" "${GOOGLE_CLIENT_ID}"
-  prompt_secret GOOGLE_CLIENT_SECRET "Google OAuth client secret (bootstrap)" "${GOOGLE_CLIENT_SECRET}"
-  prompt_optional YANDEX_CLIENT_ID "Yandex OAuth client ID (bootstrap)" "${YANDEX_CLIENT_ID}"
-  prompt_secret YANDEX_CLIENT_SECRET "Yandex OAuth client secret (bootstrap)" "${YANDEX_CLIENT_SECRET}"
+  prompt_optional GOOGLE_CLIENT_ID "Google OIDC client ID (bootstrap; issuer accounts.google.com)" "${GOOGLE_CLIENT_ID}"
+  prompt_secret GOOGLE_CLIENT_SECRET "Google OIDC client secret (bootstrap)" "${GOOGLE_CLIENT_SECRET}"
+  prompt_optional YANDEX_CLIENT_ID "Yandex OAuth client ID (optional bootstrap)" "${YANDEX_CLIENT_ID}"
+  prompt_secret YANDEX_CLIENT_SECRET "Yandex OAuth client secret (optional bootstrap)" "${YANDEX_CLIENT_SECRET}"
   if [[ -n "${GOOGLE_CLIENT_ID}" && -n "${GOOGLE_CLIENT_SECRET}" ]]; then
     google_ok=1
   fi

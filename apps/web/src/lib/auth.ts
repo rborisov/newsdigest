@@ -19,16 +19,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth(async () => {
     ...authConfig,
     providers,
     callbacks: {
-      async signIn({ user }) {
-        if (!user.email) {
+      async signIn({ user, profile }) {
+        const email =
+          (typeof user.email === "string" && user.email) ||
+          (profile && typeof profile.email === "string" ? profile.email : undefined);
+        if (!email) {
           return false;
         }
 
-        return isEmailAllowed(user.email);
+        return isEmailAllowed(email);
       },
-      async jwt({ token, user }) {
+      async jwt({ token, user, profile }) {
         const email =
           user?.email ??
+          (profile && typeof profile.email === "string" ? profile.email : undefined) ??
           (typeof token.email === "string" ? token.email : undefined);
 
         if (email) {

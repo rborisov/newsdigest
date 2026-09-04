@@ -12,7 +12,7 @@ export async function requireAdmin(): Promise<Session> {
   }
 
   if (!session.user.isAdmin) {
-    redirect("/auth/error?error=AccessDenied");
+    redirect("/auth/error?error=NotAdmin");
   }
 
   return session;

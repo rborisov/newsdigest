@@ -9,13 +9,13 @@ type SignInPageProps = {
 };
 
 export default async function SignInPage({ searchParams }: SignInPageProps) {
-  const { callbackUrl = "/admin" } = await searchParams;
+  const { callbackUrl = "/" } = await searchParams;
   const buttons = await listSignInButtons();
 
   async function startSignIn(formData: FormData) {
     "use server";
     const provider = String(formData.get("provider") ?? "").trim();
-    const next = String(formData.get("callbackUrl") ?? "/admin").trim() || "/admin";
+    const next = String(formData.get("callbackUrl") ?? "/").trim() || "/";
     if (!provider) {
       return;
     }

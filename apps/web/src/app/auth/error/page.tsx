@@ -2,7 +2,9 @@ import Link from "next/link";
 
 const ERROR_MESSAGES: Record<string, string> = {
   AccessDenied:
-    "Your account is not allowed to access this area, or you are not an admin.",
+    "Your email is not on this site’s allowlist (Admin → People). Sign in with the same address that is listed, or add it there.",
+  NotAdmin:
+    "You are signed in, but this account is not an admin. Ask an admin to enable Admin for your email under People.",
   Configuration: "Authentication is misconfigured. Contact the site operator.",
   Verification: "The sign-in link is invalid or has expired.",
   Default: "Sign-in failed. Please try again or contact the site operator.",

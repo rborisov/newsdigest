@@ -70,7 +70,7 @@ is_installed() {
 prompt() {
   local __var="$1" __q="$2" __d="${3:-}" __ans
   if [[ -n "${__d}" ]]; then
-    read -r -p "${__q} [${__d}]: " __ans </dev/tty || true
+    read -r -p "${__q} [Enter keeps: ${__d}]: " __ans </dev/tty || true
     __ans="${__ans:-${__d}}"
   else
     read -r -p "${__q}: " __ans </dev/tty || true
@@ -78,14 +78,26 @@ prompt() {
   printf -v "${__var}" '%s' "${__ans}"
 }
 
+# Optional field: Enter keeps existing, or skips when none set.
+prompt_optional() {
+  local __var="$1" __q="$2" __d="${3:-}" __ans
+  if [[ -n "${__d}" ]]; then
+    read -r -p "${__q} [configured — Enter keeps current]: " __ans </dev/tty || true
+    __ans="${__ans:-${__d}}"
+  else
+    read -r -p "${__q} [optional — Enter skips]: " __ans </dev/tty || true
+  fi
+  printf -v "${__var}" '%s' "${__ans}"
+}
+
 prompt_secret() {
   local __var="$1" __q="$2" __d="${3:-}" __ans
   if [[ -n "${__d}" ]]; then
-    read -r -s -p "${__q} [keep existing if blank]: " __ans </dev/tty || true
+    read -r -s -p "${__q} [configured — Enter keeps current]: " __ans </dev/tty || true
     echo
     __ans="${__ans:-${__d}}"
   else
-    read -r -s -p "${__q}: " __ans </dev/tty || true
+    read -r -s -p "${__q} [optional unless required]: " __ans </dev/tty || true
     echo
   fi
   printf -v "${__var}" '%s' "${__ans}"
@@ -387,6 +399,8 @@ load_env_defaults() {
 }
 
 prompt_config() {
+  log "Press Enter on any prompt to keep the current value (shown when already set)."
+
   prompt DOMAIN "Domain (FQDN)" "${DOMAIN}"
   [[ -n "${DOMAIN}" ]] || die "DOMAIN is required."
 
@@ -396,13 +410,16 @@ prompt_config() {
   prompt ALLOWED_EMAILS "Allowed admin emails (comma-separated)" "${ALLOWED_EMAILS}"
   [[ -n "${ALLOWED_EMAILS}" ]] || die "ALLOWED_EMAILS is required."
 
-  log "Sign-in providers are managed in Admin → Sign-in after first login."
-  log "Optional env bootstrap (used only until Admin providers are configured):"
-  prompt OIDC_ISSUER "OIDC issuer URL bootstrap (optional)" "${OIDC_ISSUER}"
-  prompt OIDC_CLIENT_ID "OIDC client id bootstrap (optional)" "${OIDC_CLIENT_ID}"
-  prompt_secret OIDC_CLIENT_SECRET "OIDC client secret bootstrap (optional)" "${OIDC_CLIENT_SECRET}"
-  prompt OIDC_PROVIDER_ID "OIDC Auth.js provider id" "${OIDC_PROVIDER_ID:-oidc}"
-  prompt OIDC_PROVIDER_NAME "OIDC button label (optional)" "${OIDC_PROVIDER_NAME}"
+  log "--- Sign-in ---"
+  log "Preferred: Admin → Sign-in in the portal (stored in the database)."
+  log "Env fields below are bootstrap only. If Admin → Sign-in is already configured,"
+  log "you can press Enter through all of them to leave env bootstrap empty/unchanged."
+
+  prompt_optional OIDC_ISSUER "OIDC issuer URL (bootstrap)" "${OIDC_ISSUER}"
+  prompt_optional OIDC_CLIENT_ID "OIDC client id (bootstrap)" "${OIDC_CLIENT_ID}"
+  prompt_secret OIDC_CLIENT_SECRET "OIDC client secret (bootstrap)" "${OIDC_CLIENT_SECRET}"
+  prompt_optional OIDC_PROVIDER_ID "OIDC Auth.js provider id" "${OIDC_PROVIDER_ID:-oidc}"
+  prompt_optional OIDC_PROVIDER_NAME "OIDC button label" "${OIDC_PROVIDER_NAME}"
 
   local oidc_ok=0 google_ok=0 yandex_ok=0
   if [[ -n "${OIDC_ISSUER}" && -n "${OIDC_CLIENT_ID}" && -n "${OIDC_CLIENT_SECRET}" ]]; then
@@ -410,10 +427,10 @@ prompt_config() {
   fi
   [[ -n "${OIDC_PROVIDER_ID}" ]] || OIDC_PROVIDER_ID="oidc"
 
-  prompt GOOGLE_CLIENT_ID "Google OAuth client ID bootstrap (optional)" "${GOOGLE_CLIENT_ID}"
-  prompt_secret GOOGLE_CLIENT_SECRET "Google OAuth client secret bootstrap (optional)" "${GOOGLE_CLIENT_SECRET}"
-  prompt YANDEX_CLIENT_ID "Yandex OAuth client ID bootstrap (optional)" "${YANDEX_CLIENT_ID}"
-  prompt_secret YANDEX_CLIENT_SECRET "Yandex OAuth client secret bootstrap (optional)" "${YANDEX_CLIENT_SECRET}"
+  prompt_optional GOOGLE_CLIENT_ID "Google OAuth client ID (bootstrap)" "${GOOGLE_CLIENT_ID}"
+  prompt_secret GOOGLE_CLIENT_SECRET "Google OAuth client secret (bootstrap)" "${GOOGLE_CLIENT_SECRET}"
+  prompt_optional YANDEX_CLIENT_ID "Yandex OAuth client ID (bootstrap)" "${YANDEX_CLIENT_ID}"
+  prompt_secret YANDEX_CLIENT_SECRET "Yandex OAuth client secret (bootstrap)" "${YANDEX_CLIENT_SECRET}"
   if [[ -n "${GOOGLE_CLIENT_ID}" && -n "${GOOGLE_CLIENT_SECRET}" ]]; then
     google_ok=1
   fi
@@ -422,32 +439,40 @@ prompt_config() {
   fi
 
   if [[ "${oidc_ok}" -eq 0 && "${google_ok}" -eq 0 && "${yandex_ok}" -eq 0 ]]; then
-    die "Need at least one bootstrap provider (OIDC or Google or Yandex) so you can open Admin → Sign-in."
+    log "No env bootstrap providers set — OK if Admin → Sign-in already has providers."
+    log "If you cannot sign in after install, re-run with reconfigure and set bootstrap OIDC/Google/Yandex."
   fi
 
   if [[ "${oidc_ok}" -eq 1 ]]; then
     log "OIDC bootstrap via ${OIDC_ISSUER}; register https://${DOMAIN}/api/auth/callback/${OIDC_PROVIDER_ID} on the IdP."
   fi
 
+  log "--- Other secrets ---"
   prompt_secret CURSOR_API_KEY "Cursor API key" "${CURSOR_API_KEY}"
-  [[ -n "${CURSOR_API_KEY}" ]] || die "CURSOR_API_KEY is required."
+  [[ -n "${CURSOR_API_KEY}" ]] || die "CURSOR_API_KEY is required (Enter keeps current if already set)."
 
-  prompt_secret TELEGRAPH_ACCESS_TOKEN "Telegra.ph access token (optional)" "${TELEGRAPH_ACCESS_TOKEN}"
+  prompt_secret TELEGRAPH_ACCESS_TOKEN "Telegra.ph access token" "${TELEGRAPH_ACCESS_TOKEN}"
 
-  prompt TELEGRAM_API_ID "Telegram API id from my.telegram.org (optional, for Admin API keys)" "${TELEGRAM_API_ID}"
-  prompt_secret TELEGRAM_API_HASH "Telegram API hash (optional)" "${TELEGRAM_API_HASH}"
+  prompt_optional TELEGRAM_API_ID "Telegram API id from my.telegram.org" "${TELEGRAM_API_ID}"
+  prompt_secret TELEGRAM_API_HASH "Telegram API hash" "${TELEGRAM_API_HASH}"
 
   if [[ -z "${NEXTAUTH_SECRET}" ]]; then
     NEXTAUTH_SECRET="$(gen_secret)"
     log "Generated NEXTAUTH_SECRET"
+  else
+    log "Keeping existing NEXTAUTH_SECRET"
   fi
   if [[ -z "${INTERNAL_API_KEY}" ]]; then
     INTERNAL_API_KEY="$(gen_secret)"
     log "Generated INTERNAL_API_KEY"
+  else
+    log "Keeping existing INTERNAL_API_KEY"
   fi
   if [[ -z "${CONNECTIONS_SECRET}" ]]; then
     CONNECTIONS_SECRET="$(gen_secret)"
     log "Generated CONNECTIONS_SECRET"
+  else
+    log "Keeping existing CONNECTIONS_SECRET"
   fi
 
   NEXTAUTH_URL="https://${DOMAIN}"
